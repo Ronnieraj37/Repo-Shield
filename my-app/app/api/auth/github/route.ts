@@ -12,6 +12,7 @@ import { appUrl, setOAuthState } from "@/lib/session";
  */
 export async function GET(request: Request) {
   const returnTo = new URL(request.url).searchParams.get("returnTo") ?? "/scan";
+  const base = await appUrl();
 
   const clientId = process.env.GITHUB_CLIENT_ID;
   if (!clientId || !process.env.GITHUB_CLIENT_SECRET) {
@@ -21,14 +22,14 @@ export async function GET(request: Request) {
     const message =
       "GitHub sign-in is not set up on this server. You can still scan private repositories by pasting your own token below.";
     return NextResponse.redirect(
-      `${appUrl()}/scan?auth_error=${encodeURIComponent(message)}`,
+      `${base}/scan?auth_error=${encodeURIComponent(message)}`,
     );
   }
   const state = await setOAuthState();
 
   const authorize = new URL("https://github.com/login/oauth/authorize");
   authorize.searchParams.set("client_id", clientId);
-  authorize.searchParams.set("redirect_uri", `${appUrl()}/api/auth/github/callback`);
+  authorize.searchParams.set("redirect_uri", `${base}/api/auth/github/callback`);
   authorize.searchParams.set("scope", "read:user repo");
   // The return path rides along in `state` so the callback can send the
   // developer back where they were without a second cookie.

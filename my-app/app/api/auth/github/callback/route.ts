@@ -4,13 +4,14 @@ import { createFetchClient } from "@/lib/http-fetch";
 import { appUrl, consumeOAuthState, setSession } from "@/lib/session";
 
 export async function GET(request: Request) {
+  const base = await appUrl();
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const stateParam = url.searchParams.get("state") ?? "";
   const [state, returnToRaw] = stateParam.split(":");
 
   const fail = (reason: string) =>
-    NextResponse.redirect(`${appUrl()}/scan?auth_error=${encodeURIComponent(reason)}`);
+    NextResponse.redirect(`${base}/scan?auth_error=${encodeURIComponent(reason)}`);
 
   if (url.searchParams.get("error")) {
     return fail(url.searchParams.get("error_description") ?? "Sign-in was cancelled.");
@@ -31,7 +32,7 @@ export async function GET(request: Request) {
         client_id: process.env.GITHUB_CLIENT_ID,
         client_secret: process.env.GITHUB_CLIENT_SECRET,
         code,
-        redirect_uri: `${appUrl()}/api/auth/github/callback`,
+        redirect_uri: `${base}/api/auth/github/callback`,
       }),
       cache: "no-store",
     });
@@ -63,5 +64,5 @@ export async function GET(request: Request) {
   // Only same-origin paths, so a crafted `returnTo` can't bounce the developer
   // off-site carrying a fresh session.
   const safePath = returnTo.startsWith("/") && !returnTo.startsWith("//") ? returnTo : "/scan";
-  return NextResponse.redirect(`${appUrl()}${safePath}`);
+  return NextResponse.redirect(`${base}${safePath}`);
 }

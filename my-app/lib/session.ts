@@ -1,6 +1,6 @@
 import "server-only";
 import { createCipheriv, createDecipheriv, randomBytes, createHash } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
 /**
  * Session handling for RepoShield.
@@ -191,9 +191,49 @@ export async function resolveToken(pastedToken?: string): Promise<{
   return { source: "anonymous" };
 }
 
-export function appUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ??
-    "http://localhost:3000"
-  );
+/**
+ * The origin this app is actually being served from.
+ *
+ * This has to be exact: it becomes the OAuth `redirect_uri`, and GitHub
+ * rejects the whole sign-in when it does not match a registered callback URL,
+ * character for character.
+ *
+ * Reading it from a single env var was a trap. A deployment that forgot to set
+ * `NEXT_PUBLIC_APP_URL` silently fell back to `http://localhost:3000` and sent
+ * that to GitHub from a public URL — which fails with "The redirect_uri is not
+ * associated with this application", an error that says nothing about the
+ * actual cause. Deriving it from the request instead means localhost and
+ * production are both right with no configuration at all.
+ *
+ * Order matters:
+ *   1. an explicit override, for when the public origin differs from the one
+ *      requests arrive on (a proxy, a custom domain)
+ *   2. Vercel's stable production domain — preview deployments get unique
+ *      hostnames that will never be registered as callbacks, so OAuth from a
+ *      preview should still return to production
+ *   3. the request's own host, which covers local development
+ */
+export async function appUrl(): Promise<string> {
+  const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
+  if (productionDomain) return `https://${productionDomain.replace(/\/$/, "")}`;
+
+  try {
+    const store = await headers();
+    const host = store.get("x-forwarded-host") ?? store.get("host");
+    if (host) {
+      const proto =
+        store.get("x-forwarded-proto") ??
+        (host.startsWith("localhost") || host.startsWith("127.0.0.1")
+          ? "http"
+          : "https");
+      return `${proto}://${host}`;
+    }
+  } catch {
+    // Called outside a request scope; fall through to the dev default.
+  }
+
+  return "http://localhost:3000";
 }
