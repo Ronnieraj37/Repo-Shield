@@ -116,9 +116,11 @@ export function RepoPicker() {
             Sign in with GitHub
           </a>
         ) : (
-          <p className="mt-3 font-mono text-xs text-[var(--color-faint)]">
-            GitHub sign-in is not configured on this server. Set GITHUB_CLIENT_ID
-            and GITHUB_CLIENT_SECRET, or paste a token above.
+          <p className="mt-3 text-xs leading-relaxed text-[var(--color-muted)]">
+            Sign-in is not available on this deployment, so the repository list
+            cannot be shown. You can still scan a private repository by pasting
+            your own GitHub token above — it is used for that one scan and never
+            stored.
           </p>
         )}
         </div>

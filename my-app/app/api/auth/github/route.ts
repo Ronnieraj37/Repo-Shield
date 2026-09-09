@@ -11,15 +11,19 @@ import { appUrl, setOAuthState } from "@/lib/session";
  * sign-in page what it grants, and revoke it properly on sign-out.
  */
 export async function GET(request: Request) {
+  const returnTo = new URL(request.url).searchParams.get("returnTo") ?? "/scan";
+
   const clientId = process.env.GITHUB_CLIENT_ID;
-  if (!clientId) {
-    return NextResponse.json(
-      { error: "GitHub sign-in is not configured on this server." },
-      { status: 501 },
+  if (!clientId || !process.env.GITHUB_CLIENT_SECRET) {
+    // Send the developer back to a page that can explain itself. A raw JSON
+    // body in the address bar is a dead end — there is nothing to click and no
+    // way back.
+    const message =
+      "GitHub sign-in is not set up on this server. You can still scan private repositories by pasting your own token below.";
+    return NextResponse.redirect(
+      `${appUrl()}/scan?auth_error=${encodeURIComponent(message)}`,
     );
   }
-
-  const returnTo = new URL(request.url).searchParams.get("returnTo") ?? "/scan";
   const state = await setOAuthState();
 
   const authorize = new URL("https://github.com/login/oauth/authorize");

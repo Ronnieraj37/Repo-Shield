@@ -86,6 +86,12 @@ export interface GitHubOptions {
   http: HttpClient;
   token?: string;
   /**
+   * Where the token came from. Only used to word the 401 correctly — telling
+   * someone their "session expired" when they pasted a token is misleading
+   * advice about a credential they control.
+   */
+  tokenSource?: "pasted" | "session" | "server" | "anonymous";
+  /**
    * API origin. Overridable so a CRE simulation can point at a local mock
    * server — the CLI simulator has no route to the real internet.
    */
@@ -99,7 +105,7 @@ interface RequestOptions extends GitHubOptions {
 
 async function request<T>(
   path: string,
-  { token, allowMissing, http, apiBase }: RequestOptions,
+  { token, allowMissing, http, apiBase, tokenSource }: RequestOptions,
 ): Promise<T | null> {
   const response = await http.send({
     url: `${(apiBase ?? DEFAULT_API).replace(/\/$/, "")}${path}`,
@@ -133,7 +139,10 @@ async function request<T>(
       "RATE_LIMITED",
       token
         ? "GitHub's API rate limit is exhausted for this account. It resets shortly."
-        : "GitHub's anonymous rate limit is exhausted for your network. Sign in with GitHub to get your own, much larger limit.",
+        // Deliberately does not say "sign in": this module has no idea whether
+        // OAuth is configured on this deployment, and pointing someone at a
+        // button that may not exist is worse than saying nothing.
+        : "GitHub's anonymous rate limit is exhausted for this server. Using your own GitHub credentials raises it from 60 requests an hour to 5,000.",
       retryAt,
     );
   }
@@ -147,14 +156,18 @@ async function request<T>(
       token ? "NOT_FOUND" : "NEEDS_AUTH",
       token
         ? "That repository does not exist, or your account cannot see it."
-        : "This repository is either private or does not exist. Sign in with GitHub to check.",
+        : "This repository is either private or does not exist — GitHub returns the same answer for both when you are not authenticated. Use your own GitHub credentials to find out which.",
     );
   }
 
   if (response.status === 401) {
     throw new GitHubError(
       "NEEDS_AUTH",
-      "Your GitHub session has expired. Sign in again.",
+      tokenSource === "pasted"
+        ? "GitHub rejected that token. Check it was copied in full and has not expired or been revoked."
+        : tokenSource === "server"
+          ? "This server's GitHub token was rejected. Sign in, or paste your own token."
+          : "Your GitHub session has expired. Sign in again.",
     );
   }
 

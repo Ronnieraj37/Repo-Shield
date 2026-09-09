@@ -10,6 +10,7 @@ import {
 import { getSample, sampleToAnalyzeInput } from "@/lib/samples";
 import {
   CreError,
+  creConfigured,
   runConfidentialScan,
   verdictToReport,
 } from "@/lib/cre";
@@ -35,11 +36,15 @@ interface ScanRequest {
 }
 
 export async function POST(request: Request) {
-  let body: ScanRequest;
+  // A malformed body still gets answered as an event stream. Returning a bare
+  // 400 here leaves the client's SSE reader with nothing to parse, so the scan
+  // sits on "running" forever instead of showing the error.
+  let body: ScanRequest | null = null;
+  let parseError: string | null = null;
   try {
     body = (await request.json()) as ScanRequest;
   } catch {
-    return Response.json({ error: "Malformed request." }, { status: 400 });
+    parseError = "The scan request could not be read. Please try again.";
   }
 
   const encoder = new TextEncoder();
@@ -54,6 +59,10 @@ export async function POST(request: Request) {
       };
 
       try {
+        if (parseError || !body) {
+          send({ type: "error", code: "INVALID_INPUT", message: parseError ?? "Empty request." });
+          return;
+        }
         await runScan(body, send);
       } catch (error) {
         send(toErrorEvent(error));
@@ -110,6 +119,15 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
 
   // --- Confidential mode: hand the whole job to the enclave ----------------
   if (body.mode === "confidential") {
+    // Check the workflow is actually reachable before narrating a TEE scan.
+    // Telling someone their code is being analysed in an enclave and then
+    // failing is worse than failing immediately.
+    if (!creConfigured()) {
+      throw new CreError(
+        "Confidential scanning is not configured on this server, so this scan did not run. Run a standard scan instead.",
+      );
+    }
+
     const startedAt = Date.now();
     send({
       type: "stage",
@@ -150,7 +168,8 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
             : "Using this server's public API budget",
   });
 
-  const repo = await fetchRepoMeta(parsed, { http, token });
+  const gh = { http, token, tokenSource: source };
+  const repo = await fetchRepoMeta(parsed, gh);
 
   send({
     type: "stage",
@@ -158,7 +177,7 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
     message: "Reading the file tree",
     detail: `${repo.ref} at ${repo.commit.slice(0, 7)}`,
   });
-  const { tree, truncated } = await fetchTree(repo, { http, token });
+  const { tree, truncated } = await fetchTree(repo, gh);
 
   send({
     type: "stage",
@@ -166,7 +185,7 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
     message: "Fetching files worth reading",
     detail: `${tree.filter((e) => e.type === "blob").length} files in tree`,
   });
-  const { contents, considered } = await fetchFiles(repo, tree, { http, token }, (fetched, total) => {
+  const { contents, considered } = await fetchFiles(repo, tree, gh, (fetched, total) => {
     // Only report at intervals; one event per file would flood the stream for
     // no benefit at these speeds.
     if (fetched === total || fetched % 5 === 0) {

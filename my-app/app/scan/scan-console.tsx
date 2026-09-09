@@ -37,6 +37,7 @@ export function ScanConsole() {
   const [findings, setFindings] = useState<Finding[]>([]);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
   const [renderedTarget, setRenderedTarget] = useState(target);
+  const [signInAvailable, setSignInAvailable] = useState<boolean | null>(null);
   const startedFor = useRef<string | null>(null);
 
   // Adjusting state during render, rather than in an effect, is React's own
@@ -49,6 +50,25 @@ export function ScanConsole() {
     setFindings([]);
     setError(null);
   }
+
+  // Whether this server can actually perform an OAuth sign-in. Offering the
+  // button when it cannot sends the developer to a 501 with no way back — the
+  // single worst thing a security tool can do at the moment someone is already
+  // nervous about a repository.
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/me")
+      .then((r) => r.json())
+      .then((me: { signInAvailable?: boolean }) => {
+        if (!cancelled) setSignInAvailable(Boolean(me.signInAvailable));
+      })
+      .catch(() => {
+        if (!cancelled) setSignInAvailable(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const run = useCallback(
     async (body: Record<string, string>) => {
@@ -165,7 +185,7 @@ export function ScanConsole() {
           </p>
         </div>
         {authError ? (
-          <ErrorPanel code="AUTH" message={authError} />
+          <ErrorPanel code="AUTH" message={authError} signInAvailable={signInAvailable} />
         ) : null}
         <ScanBox autoFocus />
         <RepoPicker />
@@ -239,7 +259,14 @@ export function ScanConsole() {
         </div>
       ) : null}
 
-      {error ? <ErrorPanel code={error.code} message={error.message} repo={repo} /> : null}
+      {error ? (
+        <ErrorPanel
+          code={error.code}
+          message={error.message}
+          repo={repo}
+          signInAvailable={signInAvailable}
+        />
+      ) : null}
     </div>
   );
 }
@@ -256,12 +283,16 @@ function ErrorPanel({
   code,
   message,
   repo,
+  signInAvailable,
 }: {
   code: string;
   message: string;
   repo?: string | null;
+  /** `null` while unknown — render neither branch rather than guessing. */
+  signInAvailable: boolean | null;
 }) {
   const returnTo = repo ? `/scan?repo=${encodeURIComponent(repo)}` : "/scan";
+  const wantsAuth = code === "NEEDS_AUTH" || code === "RATE_LIMITED";
 
   return (
     <div className="panel p-5" style={{ borderColor: "var(--color-critical)" }}>
@@ -270,7 +301,7 @@ function ErrorPanel({
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-relaxed">{message}</p>
 
-          {code === "NEEDS_AUTH" ? (
+          {code === "NEEDS_AUTH" && signInAvailable === true ? (
             <div className="mt-4 space-y-3">
               <a
                 href={`/api/auth/github?returnTo=${encodeURIComponent(returnTo)}`}
@@ -297,7 +328,7 @@ function ErrorPanel({
             </div>
           ) : null}
 
-          {code === "RATE_LIMITED" ? (
+          {code === "RATE_LIMITED" && signInAvailable === true ? (
             <a
               href={`/api/auth/github?returnTo=${encodeURIComponent(returnTo)}`}
               className="btn btn-ghost mt-4"
@@ -305,6 +336,33 @@ function ErrorPanel({
               <GithubMark />
               Sign in for a higher limit
             </a>
+          ) : null}
+
+          {wantsAuth && signInAvailable === false ? (
+            <div className="mt-4 rounded-lg border border-[var(--color-border-strong)] bg-[var(--color-surface-2)] p-3.5">
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <KeyRound size={13} className="text-[var(--color-medium)]" />
+                Use your own GitHub token
+              </p>
+              <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-muted)]">
+                Sign-in is not set up on this server, so this is the way through.
+                Create a{" "}
+                <a
+                  href="https://github.com/settings/tokens/new?scopes=repo&description=RepoShield%20scan"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-[var(--color-accent)] hover:underline"
+                >
+                  classic token
+                </a>{" "}
+                — <code className="font-mono">repo</code> scope for a private
+                repository, or no scopes at all if you only need a higher rate
+                limit. It is used for one request and never stored.
+              </p>
+              <Link href="/scan" className="btn btn-ghost mt-3">
+                Paste a token and retry
+              </Link>
+            </div>
           ) : null}
 
           {code === "CRE_UNAVAILABLE" ? (

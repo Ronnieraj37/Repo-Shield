@@ -23,8 +23,12 @@ export function ScanBox({ autoFocus = false }: { autoFocus?: boolean }) {
     let cancelled = false;
     fetch("/api/me")
       .then((r) => r.json())
-      .then((me: { confidentialAvailable?: boolean }) => {
-        if (!cancelled) setCreAvailable(Boolean(me.confidentialAvailable));
+      .then((me: { confidentialAvailable?: boolean; signInAvailable?: boolean }) => {
+        if (cancelled) return;
+        setCreAvailable(Boolean(me.confidentialAvailable));
+        // With no OAuth configured, pasting a token is the only route to a
+        // private repo — so lead with it rather than hiding it behind a link.
+        if (!me.signInAvailable) setShowToken(true);
       })
       .catch(() => {});
     return () => {

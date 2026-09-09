@@ -30,6 +30,9 @@ export async function GET() {
     const code = error instanceof GitHubError ? error.code : "NETWORK";
     const message =
       error instanceof GitHubError ? error.message : "Could not list repositories.";
-    return NextResponse.json({ error: message, code }, { status: 502 });
+    // A dead token is the caller's problem to fix by signing in again; only a
+    // genuine upstream failure is a 502.
+    const status = code === "NEEDS_AUTH" ? 401 : code === "RATE_LIMITED" ? 429 : 502;
+    return NextResponse.json({ error: message, code }, { status });
   }
 }
