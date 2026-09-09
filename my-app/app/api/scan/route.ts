@@ -1,5 +1,5 @@
 import { analyzeRepo } from "@/lib/analyzer";
-import type { ScanEvent } from "@/lib/analyzer/types";
+import type { FileEntry, ScanEvent } from "@/lib/analyzer/types";
 import {
   GitHubError,
   fetchFiles,
@@ -7,6 +7,7 @@ import {
   fetchTree,
   parseRepoInput,
 } from "@/lib/github";
+import { fetchRepoArchive } from "@/lib/github-archive";
 import { getSample, sampleToAnalyzeInput } from "@/lib/samples";
 import {
   CreError,
@@ -171,32 +172,62 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
   const gh = { http, token, tokenSource: source };
   const repo = await fetchRepoMeta(parsed, gh);
 
+  // Try the archive first. It is one request that costs no API quota at all —
+  // the endpoint redirects to codeload.github.com, which is not metered — and
+  // it returns the file list as well as the contents. Getting the tree from it
+  // means never calling the tree API, so a whole scan costs two requests
+  // rather than the fifteen-plus that per-file fetching needed.
   send({
     type: "stage",
     stage: "tree",
-    message: "Reading the file tree",
+    message: "Downloading the repository",
     detail: `${repo.ref} at ${repo.commit.slice(0, 7)}`,
   });
-  const { tree, truncated } = await fetchTree(repo, gh);
 
-  send({
-    type: "stage",
-    stage: "fetching",
-    message: "Fetching files worth reading",
-    detail: `${tree.filter((e) => e.type === "blob").length} files in tree`,
-  });
-  const { contents, considered } = await fetchFiles(repo, tree, gh, (fetched, total) => {
-    // Only report at intervals; one event per file would flood the stream for
-    // no benefit at these speeds.
-    if (fetched === total || fetched % 5 === 0) {
-      send({
-        type: "stage",
-        stage: "fetching",
-        message: "Fetching files worth reading",
-        detail: `${fetched} of ${total}`,
-      });
-    }
-  });
+  let tree: FileEntry[];
+  let truncated = false;
+  let contents: Map<string, string>;
+  let considered: number;
+
+  const archive = await fetchRepoArchive(repo, gh, repo.sizeKb);
+
+  if (archive) {
+    tree = archive.tree;
+    contents = archive.contents;
+    considered = archive.considered;
+    send({
+      type: "stage",
+      stage: "fetching",
+      message: "Downloaded the whole repository in one request",
+      detail: `${(archive.archiveBytes / 1024).toFixed(0)} KB · ${contents.size} files readable · no API quota used`,
+    });
+  } else {
+    // Too large, or the archive route was unavailable. Fall back to reading
+    // the tree and fetching the highest-risk files one at a time.
+    send({
+      type: "stage",
+      stage: "tree",
+      message: "Reading the file tree",
+      detail: "archive unavailable, falling back to per-file",
+    });
+    const treeResult = await fetchTree(repo, gh);
+    tree = treeResult.tree;
+    truncated = treeResult.truncated;
+
+    const result = await fetchFiles(repo, tree, gh, (fetched, total) => {
+      // Only report at intervals; one event per file would flood the stream.
+      if (fetched === total || fetched % 5 === 0) {
+        send({
+          type: "stage",
+          stage: "fetching",
+          message: "Fetching files worth reading",
+          detail: `${fetched} of ${total}`,
+        });
+      }
+    });
+    contents = result.contents;
+    considered = result.considered;
+  }
 
   const report = await analyzeRepo(
     { repo, tree, contents, treeTruncated: truncated, filesConsidered: considered },

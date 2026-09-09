@@ -503,7 +503,9 @@ export const RULES: Rule[] = [
   },
   {
     id: "R12",
-    severity: "high",
+    // A CI-injection vector against the repository's secrets, not against the
+    // laptop of whoever is evaluating it.
+    severity: "medium",
     category: "ci",
     title: "Workflow uses `pull_request_target`",
     description:
@@ -523,12 +525,17 @@ export const RULES: Rule[] = [
   },
   {
     id: "R13",
-    severity: "medium",
+    // Deliberately low. Unpinned actions are a real supply-chain issue for the
+    // repository's own CI, but they cannot hurt the person deciding whether to
+    // run this code on their laptop — and most healthy repositories do it.
+    // Scoring it higher made ordinary projects read as "caution", which is
+    // exactly how a scanner teaches people to ignore it.
+    severity: "low",
     category: "ci",
     title: "GitHub Actions are not pinned to a commit SHA",
     description:
-      "Actions referenced by tag or branch can be repointed at new code by whoever owns them, after you have reviewed the workflow.",
-    recommendation: "Pin third-party actions to a full commit SHA.",
+      "Actions referenced by tag or branch can be repointed at new code by whoever owns them. This affects the repository's own CI rather than your machine, so it matters only if you fork or contribute.",
+    recommendation: "If you maintain this repo, pin third-party actions to a full commit SHA.",
     run: (ctx) => {
       const hits: Hit[] = [];
       for (const [file, content] of ctx.files) {
@@ -1001,7 +1008,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R33",
-    severity: "high",
+    severity: "medium",
     category: "supply-chain",
     title: "Dependency looks like a private package name",
     description:
@@ -1012,6 +1019,16 @@ export const RULES: Rule[] = [
       if (!ctx.packageJson) return [];
       const npmrc = ctx.files.get(".npmrc") ?? "";
       const yarnrc = ctx.files.get(".yarnrc.yml") ?? "";
+
+      // Dependency confusion needs a private package to confuse. A project
+      // with no private registry configured at all has nothing to shadow —
+      // and most scoped packages on npm are simply public, which is why the
+      // earlier version of this rule flagged `@sindresorhus/merge-streams`.
+      // Only look when the repo demonstrably consumes a private feed.
+      const usesPrivateRegistry =
+        /(^|\n)\s*@[\w.-]+:registry\s*=/.test(npmrc) ||
+        /npmScopes:/.test(yarnrc);
+      if (!usesPrivateRegistry) return [];
 
       const hits: Hit[] = [];
       const all = {

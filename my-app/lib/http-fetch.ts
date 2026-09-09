@@ -68,12 +68,18 @@ async function withTimeout(
       body: request.body,
       signal: controller.signal,
       cache: "no-store",
+      redirect: request.followRedirects === false ? "manual" : "follow",
     });
-    return {
-      status: response.status,
-      body: await response.text(),
-      headers: Object.fromEntries(response.headers.entries()),
-    };
+    const headers = Object.fromEntries(response.headers.entries());
+    if (request.responseType === "bytes") {
+      return {
+        status: response.status,
+        body: "",
+        bytes: new Uint8Array(await response.arrayBuffer()),
+        headers,
+      };
+    }
+    return { status: response.status, body: await response.text(), headers };
   } catch (error) {
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`timed out after ${Math.round(timeoutMs / 1000)}s`);

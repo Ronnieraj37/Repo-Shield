@@ -19,11 +19,28 @@ export interface HttpRequest {
   method?: "GET" | "POST";
   headers?: Record<string, string>;
   body?: string;
+  /**
+   * Ask for the raw bytes instead of text. Used for repository tarballs, which
+   * are gzip and would be destroyed by UTF-8 decoding.
+   */
+  responseType?: "text" | "bytes";
+  /**
+   * Set false to receive the 3xx instead of following it.
+   *
+   * GitHub's tarball endpoint redirects across origins to codeload.github.com.
+   * The token authorises the first hop only — codeload does not want it, and
+   * runtimes strip `Authorization` on an origin change regardless, which would
+   * silently fail every private repository if we let the redirect be followed
+   * automatically.
+   */
+  followRedirects?: boolean;
 }
 
 export interface HttpResponse {
   status: number;
   body: string;
+  /** Populated instead of `body` when `responseType: "bytes"` was requested. */
+  bytes?: Uint8Array;
   headers?: Record<string, string>;
 }
 

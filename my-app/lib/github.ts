@@ -22,6 +22,15 @@ export type GitHubErrorCode =
  * and "this repo exists but you cannot see it" is the entire product. The
  * second one is the prompt to sign in; the first one never should be.
  */
+/** " It resets at 21:04." — or nothing, if GitHub did not tell us. */
+function resetHint(reset: string | null | undefined): string {
+  if (!reset) return "";
+  const at = new Date(Number(reset) * 1000);
+  if (Number.isNaN(at.getTime())) return "";
+  const minutes = Math.max(0, Math.round((at.getTime() - Date.now()) / 60000));
+  return ` It resets in ${minutes} minute${minutes === 1 ? "" : "s"}.`;
+}
+
 export class GitHubError extends Error {
   constructor(
     readonly code: GitHubErrorCode,
@@ -137,12 +146,16 @@ async function request<T>(
     const retryAt = reset ? new Date(Number(reset) * 1000) : undefined;
     throw new GitHubError(
       "RATE_LIMITED",
+      // State the numbers and the reset time. "Rate limited" on its own reads
+      // as a bug when the developer knows they only ran one scan — the useful
+      // facts are that the 60/hour budget is shared by everyone behind this
+      // server's IP address, and exactly when it comes back.
       token
-        ? "GitHub's API rate limit is exhausted for this account. It resets shortly."
+        ? `GitHub's API rate limit is exhausted for this account.${resetHint(reset)}`
         // Deliberately does not say "sign in": this module has no idea whether
         // OAuth is configured on this deployment, and pointing someone at a
         // button that may not exist is worse than saying nothing.
-        : "GitHub's anonymous rate limit is exhausted for this server. Using your own GitHub credentials raises it from 60 requests an hour to 5,000.",
+        : `GitHub allows 60 unauthenticated requests an hour per IP address, and this server's are used up — shared with anyone else on the same network or host.${resetHint(reset)} Using your own GitHub credentials raises the limit to 5,000 an hour.`,
       retryAt,
     );
   }
@@ -212,6 +225,7 @@ export async function fetchRepoMeta(
     stars: repo.stargazers_count,
     pushedAt: repo.pushed_at,
     defaultBranch: repo.default_branch,
+    sizeKb: repo.size,
   };
 }
 
@@ -276,6 +290,32 @@ const FETCH_CONCURRENCY = 8;
  * rather than exhaustive. `selectFilesToFetch` has already ordered them by
  * risk, so a truncated fetch still gets the dangerous files.
  */
+/**
+ * Second-pass fetch for files the configs point at.
+ *
+ * Exported so the archive path gets the same treatment: `.vscode/tasks.json`
+ * naming a script is only interesting if we then read that script.
+ */
+export async function fetchReferenced(
+  repo: RepoMeta,
+  tree: FileEntry[],
+  contents: Map<string, string>,
+  options: GitHubOptions,
+): Promise<number> {
+  const byPath = new Map(
+    tree.filter((e) => e.type === "blob").map((e) => [e.path, e]),
+  );
+  const referenced = findReferencedFiles(contents, tree, new Set(contents.keys()))
+    .map((path) => byPath.get(path))
+    .filter((entry): entry is FileEntry => Boolean(entry));
+
+  for (const entry of referenced) {
+    const text = await fetchBlob(repo, entry, options);
+    if (text !== null) contents.set(entry.path, text);
+  }
+  return referenced.length;
+}
+
 export async function fetchFiles(
   repo: RepoMeta,
   tree: FileEntry[],

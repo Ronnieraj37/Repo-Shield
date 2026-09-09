@@ -88,6 +88,8 @@ export interface RepoMeta {
   stars?: number;
   pushedAt?: string;
   defaultBranch?: string;
+  /** Repository size in KB, as GitHub reports it. */
+  sizeKb?: number;
 }
 
 export interface ReportStats {
