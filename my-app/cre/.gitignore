@@ -1,0 +1,4 @@
+node_modules/
+binary.wasm
+.cre_build_tmp.*
+.env

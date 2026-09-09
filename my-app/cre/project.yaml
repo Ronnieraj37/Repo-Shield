@@ -1,0 +1,13 @@
+# ==========================================================================
+# CRE PROJECT SETTINGS — RepoShield
+# ==========================================================================
+# RepoShield's workflow talks to GitHub and Gemini, not to a chain, so no RPC
+# endpoints are required. The targets exist because the CLI selects settings by
+# target name.
+# ==========================================================================
+
+staging-settings:
+  rpcs: []
+
+production-settings:
+  rpcs: []

@@ -1,0 +1,8 @@
+{
+  "secrets_ids": {
+    "github_token_id": "github_token",
+    "gemini_api_key_id": "gemini_api_key"
+  },
+  "github_api_base": "http://127.0.0.1:8787/github",
+  "gemini_endpoint_base": "http://127.0.0.1:8787/gemini/v1beta"
+}
