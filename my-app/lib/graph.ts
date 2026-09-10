@@ -1,5 +1,6 @@
 import "server-only";
 import { keccak256, toBytes } from "viem";
+import type { PriorFlags } from "./analyzer/types";
 
 /**
  * Reads from the RepoShield registry subgraph on The Graph.
@@ -95,6 +96,31 @@ export async function recentDangerous(limit = 20): Promise<RegistryEntry[]> {
   return (data?.repos ?? []).map(normalize);
 }
 
+/**
+ * All flagged repositories belonging to one owner/org.
+ *
+ * This is the "flag the sender, not just the repo" signal. A single flagged
+ * repo can be a false alarm; an *owner* with several repos flagged dangerous
+ * by different people is the shape of a Contagious Interview operator, who
+ * spins up a repo per candidate under one throwaway account or org.
+ */
+export async function lookupOwner(owner: string, limit = 10): Promise<RegistryEntry[]> {
+  const data = await query<{ repos: RawRepo[] }>(
+    JSON.stringify({
+      query: `query($prefix: String!, $limit: Int!) {
+        repos(
+          first: $limit
+          orderBy: scannedAt
+          orderDirection: desc
+          where: { name_starts_with: $prefix, verdict_in: ["Danger", "Caution"] }
+        ) { name commit threatScore verdict reporter scannedAt publishCount }
+      }`,
+      variables: { prefix: `${owner}/`, limit },
+    }),
+  );
+  return (data?.repos ?? []).map(normalize);
+}
+
 export async function registryStats(): Promise<RegistryStats | null> {
   const data = await query<{ registry: RawStats | null }>(
     JSON.stringify({
@@ -145,4 +171,25 @@ function normalize(r: RawRepo): RegistryEntry {
  */
 function repoIdHex(repoName: string): string {
   return keccak256(toBytes(repoName));
+}
+
+/**
+ * Everything the community registry knows about a repo and its owner, shaped
+ * for the analyzer to reason over. Fetched once, before analysis.
+ */
+
+export async function gatherPriorFlags(owner: string, name: string): Promise<PriorFlags | null> {
+  if (!graphConfigured()) return null;
+  const repoName = `${owner}/${name}`;
+  const [repo, ownerRepos] = await Promise.all([lookupRepo(repoName), lookupOwner(owner, 10)]);
+
+  // The owner's OTHER flagged repos — exclude this one.
+  const others = ownerRepos.filter((r) => r.name !== repoName);
+
+  return {
+    repo: repo
+      ? { verdict: repo.verdict, threatScore: repo.threatScore, publishCount: repo.publishCount }
+      : null,
+    owner: { flaggedRepoCount: others.length, names: others.slice(0, 8).map((r) => r.name) },
+  };
 }

@@ -1,5 +1,5 @@
 import type { HttpClient, HttpResponse } from "./http";
-import type { Finding, Severity } from "./types";
+import type { Finding, PriorFlags, Severity } from "./types";
 
 /**
  * Phase 2 — targeted AI analysis.
@@ -136,6 +136,7 @@ export async function analyzeWithGemini(
   http: HttpClient,
   endpointBase: string = DEFAULT_GEMINI_BASE,
   model?: string,
+  priorFlags?: PriorFlags | null,
 ): Promise<AIResult> {
   const empty: AIResult = {
     findings: [],
@@ -148,7 +149,7 @@ export async function analyzeWithGemini(
   const batch = selectBatch(flagged);
   if (batch.length === 0) return empty;
 
-  const prompt = buildPrompt(batch, repoName);
+  const prompt = buildPrompt(batch, repoName, priorFlags);
 
   let raw: string;
   try {
@@ -216,7 +217,24 @@ function truncate(content: string, max: number): string {
   return `${content.slice(0, half)}\n\n… [${content.length - max} characters omitted] …\n\n${content.slice(-half)}`;
 }
 
-function buildPrompt(batch: FlaggedFile[], repoName: string): string {
+function priorContext(priorFlags?: PriorFlags | null): string {
+  if (!priorFlags) return "";
+  const parts: string[] = [];
+  if (priorFlags.repo) {
+    parts.push(
+      `This exact repository has already been flagged in RepoShield's onchain community registry (read live from The Graph): ${priorFlags.repo.publishCount} report(s), most recent verdict "${priorFlags.repo.verdict}" at ${priorFlags.repo.threatScore}/100.`,
+    );
+  }
+  if (priorFlags.owner.flaggedRepoCount > 0) {
+    parts.push(
+      `The owner of this repository has ${priorFlags.owner.flaggedRepoCount} OTHER repositor${priorFlags.owner.flaggedRepoCount === 1 ? "y" : "ies"} flagged as dangerous or suspicious by the community: ${priorFlags.owner.names.join(", ")}. An owner with a pattern of flagged repositories is the signature of a Contagious Interview operator, who creates one repository per targeted candidate.`,
+    );
+  }
+  if (parts.length === 0) return "";
+  return `\n\nPRIOR COMMUNITY EVIDENCE (from The Graph — weigh this alongside the code):\n${parts.join("\n")}\n`;
+}
+
+function buildPrompt(batch: FlaggedFile[], repoName: string, priorFlags?: PriorFlags | null): string {
   const files = batch
     .map(
       (f) =>
@@ -227,7 +245,7 @@ function buildPrompt(batch: FlaggedFile[], repoName: string): string {
   return `${SYSTEM_PROMPT}
 
 Repository: ${repoName}
-Context: this repository was sent to a developer as a job-interview coding assignment.
+Context: this repository was sent to a developer as a job-interview coding assignment.${priorContext(priorFlags)}
 
 ${files}`;
 }

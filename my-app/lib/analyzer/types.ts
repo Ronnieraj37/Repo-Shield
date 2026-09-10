@@ -160,6 +160,16 @@ export interface AnalyzeInput {
   filesConsidered?: number;
 }
 
+/**
+ * What the onchain community registry (via The Graph) knows about this repo
+ * and its owner, gathered before analysis. Plain data, so it travels into the
+ * pure analyzer and the CRE enclave alike.
+ */
+export interface PriorFlags {
+  repo: { verdict: string; threatScore: number; publishCount: number } | null;
+  owner: { flaggedRepoCount: number; names: string[] };
+}
+
 export interface AnalyzeOptions {
   /** Transport for the AI phase. Without it, phase 2 is skipped. */
   http?: import("./http").HttpClient;
@@ -170,5 +180,7 @@ export interface AnalyzeOptions {
   geminiModel?: string;
   /** Skip phase 2 entirely (offline dev, tests). */
   skipAI?: boolean;
+  /** Community registry history, read from The Graph by the caller. */
+  priorFlags?: PriorFlags;
   onEvent?: (event: ScanEvent) => void;
 }

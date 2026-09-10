@@ -8,6 +8,7 @@ import {
   parseRepoInput,
 } from "@/lib/github";
 import { fetchRepoArchive } from "@/lib/github-archive";
+import { gatherPriorFlags } from "@/lib/graph";
 import { getSample, sampleToAnalyzeInput } from "@/lib/samples";
 import {
   CreError,
@@ -231,9 +232,20 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
     considered = result.considered;
   }
 
+  // Read what the community already knows about this repo and its owner, so the
+  // AI weighs it and the report reflects it. A read-only query to The Graph;
+  // it never blocks or fails the scan.
+  send({
+    type: "stage",
+    stage: "static",
+    message: "Checking the community registry",
+    detail: "via The Graph",
+  });
+  const priorFlags = await gatherPriorFlags(repo.owner, repo.name);
+
   const report = await analyzeRepo(
     { repo, tree, contents, treeTruncated: truncated, filesConsidered: considered },
-    { geminiApiKey, geminiModel, http, onEvent: send },
+    { geminiApiKey, geminiModel, http, priorFlags: priorFlags ?? undefined, onEvent: send },
   );
 
   send({ type: "done", report });

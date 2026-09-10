@@ -8,6 +8,7 @@ import type {
   AnalyzeInput,
   AnalyzeOptions,
   Finding,
+  PriorFlags,
   ThreatReport,
 } from "./types";
 
@@ -101,6 +102,7 @@ export async function analyzeRepo(
       options.http,
       options.geminiEndpointBase,
       options.geminiModel,
+      options.priorFlags,
     );
     aiFindings = dedupeAgainstStatic(result.findings, staticFindings);
     aiSummary = result.summary;
@@ -113,9 +115,13 @@ export async function analyzeRepo(
     markConfirmed(staticFindings, aiFindings);
   }
 
+  // --- Community registry (read from The Graph by the caller) --------------
+  const reputationFindings = buildReputationFindings(options.priorFlags, repoName);
+  for (const finding of reputationFindings) emit({ type: "finding", finding });
+
   // --- Scoring -------------------------------------------------------------
   emit({ type: "stage", stage: "scoring", message: "Scoring" });
-  const findings = sortFindings([...staticFindings, ...aiFindings]);
+  const findings = sortFindings([...staticFindings, ...aiFindings, ...reputationFindings]);
   const { threatScore, verdict } = calculateScore(findings);
 
   const summary =
@@ -232,6 +238,75 @@ function sortFindings(findings: Finding[]): Finding[] {
     if (a.confirmedByAI !== b.confirmedByAI) return a.confirmedByAI ? -1 : 1;
     return a.file.localeCompare(b.file);
   });
+}
+
+/**
+ * Turn community-registry history into findings.
+ *
+ * This is the second axis of evidence: not what the code says, but what other
+ * people already concluded about this repo and — more tellingly — about its
+ * owner. An owner with several repositories independently flagged dangerous is
+ * the shape of a Contagious Interview operator, who spins up one repo per
+ * candidate. That pattern is invisible to any single-repo file scan.
+ *
+ * Community flags are unverified (anyone can publish), so they inform the
+ * verdict without dominating it: capped at medium/high, never critical.
+ */
+function buildReputationFindings(
+  priorFlags: PriorFlags | undefined,
+  repoName: string,
+): Finding[] {
+  if (!priorFlags) return [];
+  const findings: Finding[] = [];
+
+  if (priorFlags.owner.flaggedRepoCount >= 2) {
+    findings.push({
+      id: `REG-owner:${repoName}`,
+      ruleId: "REG",
+      severity: "high",
+      phase: "static",
+      category: "reputation",
+      title: "This repository's owner has a pattern of flagged repositories",
+      description:
+        `The community registry (read live from The Graph) shows ${priorFlags.owner.flaggedRepoCount} other repositories under this owner already flagged as dangerous or suspicious: ${priorFlags.owner.names.join(", ")}. One flagged repo can be a false alarm; an owner with several is the signature of a fake-recruitment operator who creates a fresh repository for each candidate.`,
+      file: "(onchain community registry)",
+      evidence: `${priorFlags.owner.flaggedRepoCount} prior flags across this owner`,
+      recommendation:
+        "Treat anything from this owner as hostile until proven otherwise. This is independent of what the code in this specific repository contains.",
+    });
+  } else if (priorFlags.owner.flaggedRepoCount === 1) {
+    findings.push({
+      id: `REG-owner:${repoName}`,
+      ruleId: "REG",
+      severity: "medium",
+      phase: "static",
+      category: "reputation",
+      title: "Another repository from this owner was flagged before",
+      description:
+        `The community registry shows one other repository under this owner previously flagged: ${priorFlags.owner.names.join(", ")}.`,
+      file: "(onchain community registry)",
+      evidence: `1 prior flag under this owner`,
+      recommendation: "Be cautious with anything from this owner.",
+    });
+  }
+
+  if (priorFlags.repo && priorFlags.repo.verdict === "Danger") {
+    findings.push({
+      id: `REG-repo:${repoName}`,
+      ruleId: "REG",
+      severity: "medium",
+      phase: "static",
+      category: "reputation",
+      title: "This exact repository was already flagged by the community",
+      description:
+        `RepoShield's onchain registry records ${priorFlags.repo.publishCount} prior report(s) for this repository, most recently as "${priorFlags.repo.verdict}" (${priorFlags.repo.threatScore}/100). Verdicts are unverified community reports, but a prior danger flag is worth knowing before you run anything.`,
+      file: "(onchain community registry)",
+      evidence: `previously flagged ${priorFlags.repo.publishCount}×, last verdict Danger`,
+      recommendation: "Read the code with that prior verdict in mind.",
+    });
+  }
+
+  return findings;
 }
 
 /**
