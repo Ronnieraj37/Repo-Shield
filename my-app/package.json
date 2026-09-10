@@ -10,7 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test:analyzer": "tsx scripts/test-analyzer.mts",
     "test:ai": "node --env-file=.env.local ./node_modules/.bin/tsx scripts/test-ai.mts",
-    "scan:corpus": "node --env-file=.env.local ./node_modules/.bin/tsx scripts/scan-corpus.mts"
+    "scan:corpus": "node --env-file=.env.local ./node_modules/.bin/tsx scripts/scan-corpus.mts",
+    "backtest": "node --env-file=.env.local ./node_modules/.bin/tsx scripts/backtest.mts",
+    "test:evasion": "tsx scripts/test-evasion.mts"
   },
   "dependencies": {
     "lucide-react": "^1.42.0",

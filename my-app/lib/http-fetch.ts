@@ -71,6 +71,17 @@ async function withTimeout(
       redirect: request.followRedirects === false ? "manual" : "follow",
     });
     const headers = Object.fromEntries(response.headers.entries());
+
+    if (request.maxBytes) {
+      const declared = Number(headers["content-length"]);
+      if (Number.isFinite(declared) && declared > request.maxBytes) {
+        // 413 is not what the server said; it is what we are saying about it.
+        // The caller falls back to a cheaper strategy rather than buffering
+        // hundreds of megabytes it would only discard.
+        return { status: 413, body: `response is ${declared} bytes`, headers };
+      }
+    }
+
     if (request.responseType === "bytes") {
       return {
         status: response.status,

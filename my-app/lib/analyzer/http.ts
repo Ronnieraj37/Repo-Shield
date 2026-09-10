@@ -34,6 +34,12 @@ export interface HttpRequest {
    * automatically.
    */
   followRedirects?: boolean;
+  /**
+   * Give up rather than buffer a response larger than this. Checked against
+   * `content-length` before the body is read, so an oversized repository
+   * archive costs a round trip rather than its full download.
+   */
+  maxBytes?: number;
 }
 
 export interface HttpResponse {

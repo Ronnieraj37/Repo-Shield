@@ -109,7 +109,7 @@ const ALWAYS_FETCH: { test: RegExp; priority: number }[] = [
 
 /** Directories whose contents are noise, not signal. */
 const IGNORED_DIRS =
-  /^(node_modules|vendor|target|\.git|dist|build|out|coverage|lib\/forge-std|artifacts|cache)\//;
+  /^(node_modules|vendor|target|\.git|dist|build|out|coverage|artifacts|cache)\//;
 
 /**
  * Below this many files, read the whole repository rather than a selection.

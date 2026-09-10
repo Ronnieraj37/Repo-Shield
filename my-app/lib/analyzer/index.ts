@@ -50,6 +50,18 @@ export async function analyzeRepo(
     detail: `${input.contents.size} files`,
   });
   const context = buildRuleContext(input.tree, input.contents);
+
+  // How the repository breaks down. A scan that read 720 files but where 660
+  // are vendored dependencies is a very different thing from one where the
+  // author wrote all 720, and the report should not make the reader guess.
+  let filesVendored = 0;
+  let filesTest = 0;
+  for (const path of input.contents.keys()) {
+    const cls = context.classes.get(path);
+    if (!cls) continue;
+    if (cls.vendored) filesVendored++;
+    else if (cls.test) filesTest++;
+  }
   const staticFindings = applyRules(context);
   for (const finding of staticFindings) emit({ type: "finding", finding });
 
@@ -125,6 +137,8 @@ export async function analyzeRepo(
       coverage: considered === 0 ? 1 : Math.min(1, input.contents.size / considered),
       filesFlagged: flagged.length,
       filesAnalyzedByAI,
+      filesVendored,
+      filesTest,
       durationMs: Date.now() - startedAt,
       treeTruncated: input.treeTruncated ?? false,
     },

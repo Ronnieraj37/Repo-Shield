@@ -217,6 +217,31 @@ export function ReportView({ report }: { report: ThreatReport }) {
           · {report.stats.filesFlagged} flagged by static rules ·{" "}
           {report.stats.filesAnalyzedByAI} reviewed by AI
         </p>
+        {report.stats.filesVendored > 0 || report.stats.filesTest > 0 ? (
+          <p className="mt-1.5 text-xs leading-relaxed text-[var(--color-muted)]">
+            {report.stats.filesVendored > 0 ? (
+              <>
+                <strong className="font-medium text-[var(--color-text)]">
+                  {report.stats.filesVendored.toLocaleString()}
+                </strong>{" "}
+                of those are third-party dependencies the author did not write
+                {report.stats.filesTest > 0 ? ", and " : ". "}
+              </>
+            ) : null}
+            {report.stats.filesTest > 0 ? (
+              <>
+                <strong className="font-medium text-[var(--color-text)]">
+                  {report.stats.filesTest.toLocaleString()}
+                </strong>{" "}
+                are tests or fixtures.{" "}
+              </>
+            ) : null}
+            Both are still scanned — a payload hidden in a dependency is still a
+            payload — but findings there are weighted down, because libraries
+            and test suites legitimately contain things that look alarming out
+            of context.
+          </p>
+        ) : null}
       </section>
       )}
 

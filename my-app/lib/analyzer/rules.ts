@@ -8,13 +8,16 @@ import {
   tomlValue,
   type PackageJson,
 } from "./parser";
-import { findBinaryArtifacts } from "./detector";
+import { findBinaryArtifacts, findReferencedFiles } from "./detector";
+import { classifyAll, type ExecContext, type FileClass } from "./classify";
 
 export interface RuleContext {
   tree: FileEntry[];
   files: Map<string, string>;
   paths: Set<string>;
   packageJson: PackageJson | null;
+  /** What each file is, and what it could do. See `classify.ts`. */
+  classes: Map<string, FileClass>;
 }
 
 interface Hit {
@@ -34,6 +37,33 @@ interface Rule {
   title: string;
   description: string;
   recommendation: string;
+  /**
+   * Execution contexts this rule can possibly be true in.
+   *
+   * A rule about reading `~/.ssh` cannot be true of a Solidity file, because
+   * Solidity has no filesystem. Declaring the context is what stops the engine
+   * reporting EVM code for host-level threats.
+   *
+   * Omitted means "any context" — reserved for rules about deceiving a human
+   * reader, which apply to text regardless of what runs it.
+   */
+  contexts?: ExecContext[];
+  /**
+   * Set when the rule stays meaningful in third-party code. Most do not:
+   * libraries mention credential paths, wallets and RPC endpoints constantly,
+   * and the repo author did not write any of it.
+   */
+  scanVendored?: boolean;
+  /**
+   * Never soften this rule for where the file sits.
+   *
+   * Reserved for rules that already demand corroboration and do not fire on
+   * ordinary libraries — reading `~/.ssh` next to a network call, a reverse
+   * shell, a browser credential store. Those are alarming in a dependency, in
+   * a test, and in build output alike; a payload dropped into `node_modules`
+   * is not less dangerous for being there.
+   */
+  neverSoften?: boolean;
   run(ctx: RuleContext): Hit[];
 }
 
@@ -178,6 +208,8 @@ function editDistance(a: string, b: string): number {
 export const RULES: Rule[] = [
   {
     id: "R01",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "critical",
     category: "lifecycle-script",
     title: "Install script downloads and executes remote code",
@@ -203,6 +235,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "R02",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "critical",
     category: "lifecycle-script",
     title: "Install script executes an encoded payload",
@@ -224,6 +258,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R03",
+    contexts: ["host", "inert"],
     severity: "critical",
     category: "obfuscation",
     title: "Dynamic code execution in a config file",
@@ -240,6 +275,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R04",
+    contexts: ["host", "inert"],
     severity: "critical",
     category: "code-execution",
     title: "Shell spawning from a config or asset file",
@@ -250,12 +286,18 @@ export const RULES: Rule[] = [
     run: (ctx) =>
       grepAll(
         ctx,
-        /require\(['"]child_process['"]\)|from\s+['"]child_process['"]|execSync|spawnSync|\.exec\s*\(/,
+        // `\.exec\s*\(` used to be in this list. It matches
+        // `RegExp.prototype.exec`, which is one of the commonest calls in
+        // JavaScript — it reported vite's own bundler config as critical
+        // shell spawning three times over. Only name the child_process API
+        // explicitly.
+        /require\(\s*['"]child_process['"]\s*\)|from\s+['"]child_process['"]|\b(execSync|execFileSync|spawnSync|execFile)\s*\(|child_process\.\w+\s*\(/,
         /(config|rc)\.(js|ts|cjs|mjs)$|\.svg$|\.json$/,
       ),
   },
   {
     id: "R05",
+    contexts: ["host"],
     severity: "high",
     category: "obfuscation",
     title: "Base64 decoding in executable code",
@@ -268,8 +310,11 @@ export const RULES: Rule[] = [
       // rule only reports a decode that sits next to somewhere the decoded
       // bytes could actually do something.
       const decode = /Buffer\.from\([^)]*['"](base64|hex)['"]\)|\batob\s*\(|base64\.b64decode|codecs\.decode\(/;
+      // Deliberately does not include a bare `.exec(`: that is
+      // `RegExp.prototype.exec`, and pairing it with `Buffer.from(x, "hex")`
+      // reported vite's CSS plugin as an encoded payload.
       const sink =
-        /\beval\s*\(|new\s+Function|child_process|execSync|spawn|\.exec\s*\(|fetch\s*\(|https?\.request|writeFileSync|chmod|import\s*\(|require\s*\(/;
+        /\beval\s*\(|new\s+Function|child_process|\b(execSync|execFileSync|spawnSync)\s*\(|\bspawn\s*\(|fetch\s*\(|https?\.request|writeFileSync|chmod|\bimport\s*\(/;
 
       const hits: Hit[] = [];
       for (const [file, content] of ctx.files) {
@@ -288,6 +333,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "R06",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "critical",
     category: "auto-execution",
     title: "VS Code task runs automatically when the folder is opened",
@@ -310,6 +357,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R06b",
+    contexts: ["host"],
     severity: "medium",
     category: "auto-execution",
     title: "VS Code task defines a shell command",
@@ -329,6 +377,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R07",
+    contexts: ["host"],
     severity: "high",
     category: "code-execution",
     title: "Foundry FFI is enabled",
@@ -346,6 +395,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R08",
+    contexts: ["host"],
     severity: "high",
     category: "build-script",
     title: "Rust build script executes at compile time",
@@ -372,6 +422,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R09",
+    contexts: ["host"],
     severity: "high",
     category: "typosquatting",
     title: "Dependency name closely resembles a popular package",
@@ -429,6 +480,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R10",
+    contexts: ["host"],
     severity: "medium",
     category: "supply-chain",
     title: "Dependencies are not pinned and no lockfile is committed",
@@ -463,6 +515,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R11",
+    contexts: ["host"],
     severity: "high",
     category: "supply-chain",
     title: "Package registry redirected to a non-official server",
@@ -503,9 +556,11 @@ export const RULES: Rule[] = [
   },
   {
     id: "R12",
-    // A CI-injection vector against the repository's secrets, not against the
-    // laptop of whoever is evaluating it.
-    severity: "medium",
+    contexts: ["host"],
+    // A CI-injection vector against the repository's own secrets, not against
+    // the laptop of whoever is evaluating it. Vite and many other healthy
+    // projects use it deliberately for bots.
+    severity: "low",
     category: "ci",
     title: "Workflow uses `pull_request_target`",
     description:
@@ -525,6 +580,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R13",
+    contexts: ["host"],
     // Deliberately low. Unpinned actions are a real supply-chain issue for the
     // repository's own CI, but they cannot hurt the person deciding whether to
     // run this code on their laptop — and most healthy repositories do it.
@@ -542,7 +598,11 @@ export const RULES: Rule[] = [
         if (!/^\.github\/workflows\//.test(file)) continue;
         for (const a of parseWorkflow(content).unpinnedActions) {
           // First-party actions moving within a major tag is normal practice.
+          // First-party actions moving within a major tag is normal practice,
+          // and a `$/...` or `./...` reference is the repository's own action,
+          // not a third party who could repoint it.
           if (/^actions\//.test(a.action)) continue;
+          if (/^[$.]/.test(a.action)) continue;
           hits.push({ file, line: a.line, evidence: `uses: ${a.action}` });
         }
       }
@@ -551,6 +611,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R14",
+    contexts: ["host"],
     severity: "high",
     category: "container",
     title: "Container config grants host access",
@@ -567,21 +628,36 @@ export const RULES: Rule[] = [
   },
   {
     id: "R15",
+    contexts: ["host"],
     severity: "high",
     category: "obfuscation",
-    title: "Large encoded blob embedded in source",
+    title: "Encoded blob that the same file decodes",
     description:
-      "A base64 or hex string this long inside source code is not data a human wrote. It is usually a compressed script or binary waiting to be decoded and run.",
+      "A base64 or hex string this long is not data a human typed, and this file also contains the code to decode it. That pairing is how a payload is carried past review.",
     recommendation:
       "Decode it in an isolated environment. `echo '<blob>' | base64 -d | head -c 500` is enough to see what it is.",
     run: (ctx) => {
+      // A long base64 run on its own is data: an embedded font, an icon, a
+      // BIP-39 wordlist, a test vector. It becomes a payload only when the
+      // same file also carries the code to decode it. Requiring both is the
+      // difference between flagging ethers.js's wordlists and flagging a
+      // dropper.
+      const decoder =
+        /Buffer\.from\([^)]*['"](base64|hex)['"]\)|\batob\s*\(|base64\.b64decode|fromCharCode|\bunescape\s*\(|gunzip|inflate|createDecipher/;
+
       const hits: Hit[] = [];
       for (const [file, content] of ctx.files) {
         if (/lock|\.min\.|\.map$/.test(file)) continue;
+        if (!decoder.test(content)) continue;
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {
           const match = lines[i].match(/[A-Za-z0-9+/=]{500,}|(?:\\x[0-9a-f]{2}){200,}/i);
-          if (match) {
+          if (!match) continue;
+          // Inline source maps and data URIs are base64 by construction, and
+          // a build tool's test fixtures are full of both. Decoding the first
+          // bytes tells us which we are looking at.
+          if (isBenignEncoding(lines[i], match[0])) continue;
+          {
             hits.push({
               file,
               line: i + 1,
@@ -596,6 +672,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "R16",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "critical",
     category: "credential-access",
     title: "Code reads credential and key directories",
@@ -626,6 +704,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R17",
+    contexts: ["host"],
     severity: "critical",
     category: "credential-access",
     title: "Code targets cryptocurrency wallet storage",
@@ -633,16 +712,47 @@ export const RULES: Rule[] = [
       "The code references browser-extension wallet storage or keystore files. This is the payload the Contagious Interview campaign is built to deliver.",
     recommendation:
       "Do not run this. If you already did, move your funds from any hot wallet on this machine now, then rebuild the machine.",
-    run: (ctx) =>
-      grepAll(
-        ctx,
-        /wallet\.dat|keystore\/|nkbihfbeogaeaoehlefnkodbefgpgknn|MetaMask|Phantom|bfnaelmomeimhlpmgjnjophhpkkoljpa|Exodus|Ledger\s*Live|id\.json|keypair\.json|mnemonic|seed\s*phrase/i,
-        undefined,
-        PROSE_FILES,
-      ),
+    run: (ctx) => {
+      // Two tiers, because the words alone mean nothing.
+      //
+      // "mnemonic", "keystore" and "seed phrase" are the working vocabulary of
+      // every wallet library on earth — ethers.js was reported as critical
+      // wallet theft for having a file called `test-wallet-hd.js`. Those terms
+      // only matter when the code is also *reaching into the filesystem*.
+      //
+      // Browser-extension IDs are different: there is no honest reason for a
+      // coding assignment to contain MetaMask's extension identifier.
+      const unambiguous =
+        /nkbihfbeogaeaoehlefnkodbefgpgknn|bfnaelmomeimhlpmgjnjophhpkkoljpa|ejbalbakoplchlghecdalmeeeajnimhm|wallet\.dat|Local\s?Extension\s?Settings/i;
+      const domainWord =
+        /keystore|mnemonic|seed\s*phrase|id\.json|keypair\.json|MetaMask|Phantom|Exodus|Ledger\s*Live/i;
+      const filesystem =
+        /readFile|readdir|existsSync|createReadStream|homedir\(\)|expanduser|path\.join|os\.environ|open\s*\(|glob\s*\(/;
+
+      const hits: Hit[] = [];
+      for (const [file, content] of ctx.files) {
+        if (PROSE_FILES.test(file)) continue;
+        const lines = content.split("\n");
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          if (unambiguous.test(line)) {
+            hits.push({ file, line: i + 1, evidence: snip(line) });
+            continue;
+          }
+          if (!domainWord.test(line)) continue;
+          // Same statement or immediately around it.
+          const window = lines.slice(Math.max(0, i - 2), i + 3).join("\n");
+          if (!filesystem.test(window)) continue;
+          hits.push({ file, line: i + 1, evidence: snip(window, 260) });
+        }
+      }
+      return hits;
+    },
   },
   {
     id: "R18",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "critical",
     category: "backdoor",
     title: "Reverse shell pattern",
@@ -660,6 +770,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R19",
+    contexts: ["host", "inert"],
     severity: "high",
     category: "obfuscation",
     title: "String built from character codes",
@@ -671,6 +782,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "R20",
+    neverSoften: true,
+    contexts: ["host", "inert"],
     severity: "critical",
     category: "auto-execution",
     title: "SVG file contains executable JavaScript",
@@ -697,6 +810,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "R21",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "critical",
     category: "supply-chain",
     title: "Yarn is reconfigured to run repo-controlled code",
@@ -728,6 +843,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R22",
+    contexts: ["host"],
     severity: "critical",
     category: "lifecycle-script",
     title: "Python file executes code at import or install time",
@@ -796,7 +912,12 @@ export const RULES: Rule[] = [
     run: (ctx) => {
       const hits: Hit[] = [];
       for (const [file, content] of ctx.files) {
+        // Prose is excluded: a markdown table pads cells with spaces, which
+        // is indistinguishable from this pattern and produced findings on
+        // axios's README and THREATMODEL. Hiding *code* off-screen only works
+        // in a file that is executed.
         if (/lock|\.min\.|\.map$|\.svg$/.test(file)) continue;
+        if (PROSE_FILES.test(file)) continue;
         const lines = content.split("\n");
         for (let i = 0; i < lines.length; i++) {
           const match = lines[i].match(/^(.*?)[ \t]{200,}(\S.*)$/);
@@ -830,6 +951,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R26",
+    contexts: ["host"],
     severity: "high",
     category: "supply-chain",
     title: "Lockfile resolves a dependency from outside the registry",
@@ -856,6 +978,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R27",
+    contexts: ["host"],
     severity: "high",
     category: "supply-chain",
     title: "Go module replaced with a third-party fork",
@@ -870,6 +993,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R28",
+    contexts: ["host"],
     severity: "high",
     category: "exfiltration",
     title: "Hardcoded exfiltration endpoint",
@@ -878,13 +1002,33 @@ export const RULES: Rule[] = [
     recommendation:
       "Find what gets sent to this endpoint. Anything reaching a Discord webhook from a coding assignment is stolen data.",
     run: (ctx) =>
+      // Bare IP literals are only interesting when they are routable. Every
+      // test suite that starts a local server writes `http://127.0.0.1:${port}`,
+      // and every dev tool logs `http://192.168.x.x` as the LAN address —
+      // axios and vite between them produced ten findings this way. Loopback,
+      // RFC1918, link-local and 0.0.0.0 go nowhere, so they are excluded.
       grepAll(
         ctx,
-        /discord(app)?\.com\/api\/webhooks|api\.telegram\.org\/bot|pastebin\.com\/raw|hastebin|transfer\.sh|\.ngrok\.(io|app|free\.dev)|https?:\/\/\d{1,3}(\.\d{1,3}){3}(:\d+)?/i,
+        new RegExp(
+          [
+            String.raw`discord(app)?\.com\/api\/webhooks`,
+            String.raw`api\.telegram\.org\/bot`,
+            String.raw`pastebin\.com\/raw`,
+            String.raw`hastebin`,
+            String.raw`transfer\.sh`,
+            String.raw`\.ngrok\.(io|app|free\.dev)`,
+            String.raw`webhook\.site`,
+            // A routable IPv4 literal: not 0.*, 10.*, 127.*, 169.254.*,
+            // 172.16-31.*, 192.168.*.
+            String.raw`https?:\/\/(?!0\.|10\.|127\.|169\.254\.|172\.(1[6-9]|2\d|3[01])\.|192\.168\.)\d{1,3}(\.\d{1,3}){3}(:\d+)?`,
+          ].join("|"),
+          "i",
+        ),
       ),
   },
   {
     id: "R29",
+    contexts: ["host"],
     severity: "critical",
     category: "exfiltration",
     title: "Environment variables collected and sent over the network",
@@ -894,8 +1038,13 @@ export const RULES: Rule[] = [
       "Assume every secret in your shell environment would have been sent. Do not run this; rotate anything already exposed.",
     run: (ctx) => {
       const hits: Hit[] = [];
+      // Reading the environment, not writing to it. `process.env.X = "0"` is
+      // a test setting a flag — axios's HTTPS test suite does exactly that
+      // next to an `axios.post`, and was reported as secret exfiltration.
+      // Bulk access is the real signal: enumerating the whole environment, or
+      // spreading it into an object.
       const readsEnv =
-        /process\.env\b|os\.environ|Object\.keys\(process\.env\)|readFileSync\([^)]*\.env|dotenv/;
+        /\.\.\.process\.env|Object\.(keys|values|entries|assign)\s*\(\s*process\.env|JSON\.stringify\s*\(\s*process\.env|\bos\.environ\b|readFileSync\([^)]*\.env|require\(['"]dotenv/;
       const sendsNetwork =
         /fetch\s*\(|axios\.|https?\.request|XMLHttpRequest|requests\.(post|get)|urllib|net\.connect|WebSocket/;
       for (const [file, content] of ctx.files) {
@@ -916,6 +1065,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R30",
+    contexts: ["host"],
     severity: "high",
     category: "auto-execution",
     title: "Editor or dev-container config runs commands on open",
@@ -927,9 +1077,18 @@ export const RULES: Rule[] = [
       const hits: Hit[] = [];
       for (const [file, content] of ctx.files) {
         if (/^\.devcontainer\//.test(file)) {
-          hits.push(
-            ...grep(file, content, /(postCreate|postStart|postAttach|initialize|onCreate)Command/),
-          );
+          // Having a lifecycle hook is not the finding — nearly every dev
+          // container has one, and axios's runs `npm ci --ignore-scripts`,
+          // which is the *safe* form. What matters is whether the command it
+          // runs is one you would not have chosen.
+          for (const hit of grep(
+            file,
+            content,
+            /(postCreate|postStart|postAttach|initialize|onCreate)Command/,
+          )) {
+            if (!SUSPICIOUS_COMMAND.test(hit.evidence)) continue;
+            hits.push(hit);
+          }
         }
         if (file === ".vscode/settings.json") {
           hits.push(
@@ -945,6 +1104,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R31",
+    contexts: ["host"],
     severity: "medium",
     category: "obfuscation",
     title: "Minified JavaScript outside a build directory",
@@ -957,6 +1117,7 @@ export const RULES: Rule[] = [
       for (const [file, content] of ctx.files) {
         if (!/\.(js|cjs|mjs|ts)$/.test(file)) continue;
         if (/^(dist|build|out|public|vendor)\//.test(file) || /\.min\./.test(file)) continue;
+        if (looksLikeDataTable(content)) continue;
         const longest = content
           .split("\n")
           .reduce((max, line) => Math.max(max, line.length), 0);
@@ -972,6 +1133,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R32",
+    contexts: ["host"],
     severity: "high",
     category: "obfuscation",
     title: "Code has the statistical signature of obfuscation",
@@ -987,6 +1149,7 @@ export const RULES: Rule[] = [
         if (/^(dist|build|out|vendor|public)\//.test(file) || /\.min\./.test(file)) continue;
         if (/lock/.test(file)) continue;
         if (content.length < 500) continue;
+        if (looksLikeDataTable(content)) continue;
 
         const measure = obfuscationScore(content);
         // One strong signal, or every weak signal agreeing.
@@ -1008,6 +1171,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R33",
+    contexts: ["host"],
     severity: "medium",
     category: "supply-chain",
     title: "Dependency looks like a private package name",
@@ -1053,6 +1217,7 @@ export const RULES: Rule[] = [
   },
   {
     id: "R34",
+    contexts: ["host", "inert"],
     severity: "medium",
     category: "supply-chain",
     title: "File extension does not match its contents",
@@ -1063,7 +1228,11 @@ export const RULES: Rule[] = [
       const hits: Hit[] = [];
       const signatures: [RegExp, RegExp, string][] = [
         [/\.(md|txt|rst)$/i, /^#!\s*\/(bin|usr)/, "shell script with a document extension"],
-        [/\.(json)$/i, /^\s*(?:\/\/|function |const |var |require\()/, "JavaScript with a .json extension"],
+        // `//` comments are not a signal: tsconfig.json, .vscode/*.json and
+        // most tool configs are JSON-with-comments by convention, and vite's
+        // own tsconfig was reported for a `// prettier-ignore` line. Only
+        // actual executable constructs count.
+        [/\.(json)$/i, /^\s*(?:function\s|require\s*\(|module\.exports|=>)/, "JavaScript with a .json extension"],
         [/\.(png|jpe?g|gif|webp|ico)$/i, /^\s*[<{]|require\(|function\s/, "text or code with an image extension"],
         [/\.(css|scss)$/i, /require\(|child_process|eval\s*\(/, "JavaScript inside a stylesheet"],
       ];
@@ -1080,6 +1249,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "R35",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "critical",
     category: "obfuscation",
     title: "String decoded with an XOR loop",
@@ -1098,6 +1269,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "R36",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "critical",
     category: "credential-access",
     title: "Code reads browser credential storage",
@@ -1115,6 +1288,8 @@ export const RULES: Rule[] = [
   },
   {
     id: "R37",
+    neverSoften: true,
+    contexts: ["host"],
     severity: "high",
     category: "code-execution",
     title: "Downloads a different payload per operating system",
@@ -1161,6 +1336,34 @@ export const RULES: Rule[] = [
  * Requiring weak signals to agree is what keeps ordinary minified code out;
  * calibrated against real obfuscator output and hand-written TypeScript.
  */
+/**
+ * Whether a file's bulk is a data literal rather than code.
+ *
+ * Both the "minified" and "obfuscated" rules key on enormous single lines,
+ * which is also exactly what a generated data table looks like: ethers.js
+ * stores each BIP-39 wordlist as one line of two thousand quoted words, and
+ * that tripped every signal both rules have.
+ *
+ * The distinction is what survives once string literals, numbers and
+ * punctuation are removed. Packed code is dense with keywords, operators and
+ * statement separators; a word list has almost nothing left.
+ */
+function looksLikeDataTable(content: string): boolean {
+  const longest = content
+    .split("\n")
+    .reduce((max, line) => (line.length > max.length ? line : max), "");
+  if (longest.length < 500) return false;
+
+  const stripped = longest
+    // Quoted strings, including escaped unicode, and bare numbers.
+    .replace(/(["'`])(?:\\.|(?!\1)[^\\])*\1/g, "")
+    .replace(/\b0x[0-9a-fA-F]+\b|\b\d+(\.\d+)?\b/g, "")
+    // Separators and brackets, which carry no meaning on their own.
+    .replace(/[\s,;:[\]{}()]/g, "");
+
+  return stripped.length / longest.length < 0.08;
+}
+
 function obfuscationScore(content: string): {
   score: number;
   entropy: number;
@@ -1170,6 +1373,26 @@ function obfuscationScore(content: string): {
   strong: boolean;
 } {
   const sample = content.slice(0, 60_000);
+
+  // Text in a non-Latin script is not obfuscation.
+  //
+  // Entropy is computed per character, so a file of Chinese, Japanese or
+  // Korean draws from thousands of symbols instead of ~70 and scores far
+  // above any packed JavaScript. ethers.js's BIP-39 wordlists tripped every
+  // weak signal at once for exactly this reason. A file that is largely
+  // non-ASCII is natural-language content; deliberately hidden characters are
+  // R23's job.
+  const nonAscii = (sample.match(/[^\x00-\x7f]/g)?.length ?? 0) / sample.length;
+  if (nonAscii > 0.2) {
+    return {
+      score: 0,
+      entropy: 0,
+      whitespace: 1,
+      longestToken: 0,
+      reasons: [],
+      strong: false,
+    };
+  }
 
   const counts = new Map<string, number>();
   for (const char of sample) counts.set(char, (counts.get(char) ?? 0) + 1);
@@ -1256,6 +1479,27 @@ export function applyRules(ctx: RuleContext): Finding[] {
 
     for (const hit of hits) {
       if (emitted >= 8) break;
+
+      const cls = ctx.classes.get(hit.file);
+      if (cls) {
+        // A rule can only be true where its threat can happen. Host-level
+        // rules against Solidity are the clearest case: no filesystem, no
+        // network, no shell, so no credential theft.
+        if (rule.contexts && !rule.contexts.includes(cls.context)) continue;
+
+        // Vendored and generated code is *not* skipped. Doing so opened an
+        // obvious hole: a payload dropped in `node_modules/evil/index.js` or
+        // `lib/forge-std/src/evil.js` scored zero, and so did a `postinstall`
+        // that ran it. Third-party code that your install hook executes is
+        // precisely the threat.
+        //
+        // Instead it is softened, in `adjustSeverity`. The rules that used to
+        // make dependencies unbearable — wallet vocabulary, long base64,
+        // bare IP literals — now require corroboration, so they no longer
+        // fire on libraries at all, and softening is enough to keep the rest
+        // from drowning out the author's own code.
+      }
+
       const fileCount = perFile.get(hit.file) ?? 0;
       if (fileCount >= PER_FILE_CAP) continue;
 
@@ -1272,7 +1516,7 @@ export function applyRules(ctx: RuleContext): Finding[] {
       findings.push({
         id,
         ruleId: rule.id,
-        severity: hit.severity ?? rule.severity,
+        severity: adjustSeverity(hit.severity ?? rule.severity, cls, rule.neverSoften),
         phase: "static",
         category: rule.category,
         title: hit.title ?? rule.title,
@@ -1288,6 +1532,70 @@ export function applyRules(ctx: RuleContext): Finding[] {
   return findings;
 }
 
+/**
+ * Whether a long base64 run is something a build produced rather than
+ * something a person hid.
+ *
+ * Inline source maps, data URIs and embedded fonts are all legitimately
+ * enormous base64. Decoding the head is enough to tell: a source map starts
+ * with `{"version":3`, a data URI announces its own type.
+ */
+function isBenignEncoding(line: string, blob: string): boolean {
+  if (/sourceMappingURL|data:[a-z]+\/[\w.+-]+;base64|@font-face|url\(data:/i.test(line)) {
+    return true;
+  }
+  try {
+    const head = atob(blob.slice(0, 64).replace(/[^A-Za-z0-9+/]/g, ""));
+    // Source map, or a PNG/GIF/JPEG magic number.
+    if (/^\s*\{\s*"version"\s*:\s*3/.test(head)) return true;
+    if (/^(\x89PNG|GIF8|\xff\xd8\xff|RIFF|OggS|%PDF)/.test(head)) return true;
+  } catch {
+    // Not decodable as base64; treat it as suspicious rather than benign.
+  }
+  return false;
+}
+
+/**
+ * Commands worth reporting when something runs them automatically.
+ *
+ * Deliberately narrow. `npm ci`, `pnpm install`, `make build` are what dev
+ * containers and editor tasks are *for*; flagging them teaches people to
+ * ignore the rule.
+ */
+const SUSPICIOUS_COMMAND =
+  /curl|wget|Invoke-WebRequest|iwr\b|base64|eval|atob|\bnode\s+-e|python3?\s+-c|chmod\s+\+x|https?:\/\/|\|\s*(ba)?sh|nc\s|\/dev\/tcp/i;
+
+const SEVERITY_LADDER: Severity[] = ["critical", "high", "medium", "low", "info"];
+
+/**
+ * Soften a finding when the file it came from is not the author speaking
+ * directly.
+ *
+ * Test suites and fixtures are full of things that look terrible in isolation:
+ * forge-std's canonical test mnemonic is literally "test test test … junk",
+ * and OpenZeppelin's RSA tests carry kilobyte-long base64 key vectors. Both
+ * are exactly what a test should contain. Dropping a step keeps them visible
+ * without letting them drive the verdict — a payload hidden in a test file is
+ * still reported, just not as a five-alarm fire.
+ */
+function adjustSeverity(
+  severity: Severity,
+  cls: FileClass | undefined,
+  neverSoften?: boolean,
+): Severity {
+  if (!cls || neverSoften) return severity;
+  // A file that a manifest or editor config actually runs is the author's
+  // choice, wherever it happens to live. `postinstall: node lib/x/setup.js`
+  // makes lib/x/setup.js first-party — softening it there would let an
+  // attacker hide a payload by putting it in a directory named `lib`.
+  if (cls.referenced) return severity;
+
+  let index = SEVERITY_LADDER.indexOf(severity);
+  if (cls.test) index += 1;
+  if (cls.vendored) index += 1;
+  return SEVERITY_LADDER[Math.min(index, SEVERITY_LADDER.length - 1)];
+}
+
 export function buildRuleContext(
   tree: FileEntry[],
   files: Map<string, string>,
@@ -1298,5 +1606,26 @@ export function buildRuleContext(
     files,
     paths: new Set(tree.filter((e) => e.type === "blob").map((e) => e.path)),
     packageJson: packageJsonText ? parsePackageJson(packageJsonText) : null,
+    classes: withReferenced(classifyAll(tree, files), tree, files),
   };
+}
+
+/**
+ * Promote files that an executing config names.
+ *
+ * `findReferencedFiles` already walks manifests, editor tasks, CI and
+ * Dockerfiles looking for the scripts they invoke. Anything it finds runs on
+ * the developer's machine, so it is treated as the author's own code no matter
+ * which directory it sits in.
+ */
+function withReferenced(
+  classes: Map<string, FileClass>,
+  tree: FileEntry[],
+  files: Map<string, string>,
+): Map<string, FileClass> {
+  for (const path of findReferencedFiles(files, tree, new Set(), 60)) {
+    const cls = classes.get(path);
+    if (cls) classes.set(path, { ...cls, referenced: true });
+  }
+  return classes;
 }

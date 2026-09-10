@@ -81,6 +81,38 @@ response degrades to a Phase 1 report with a visible note. It never fails a scan
 
 Full table in [`../steps.md`](../steps.md).
 
+## What a file is, and what it could do
+
+Every rule used to run against every file, which produced confident nonsense.
+Scanning a small Foundry project reported **18 findings and 100/100 "do not
+run this"** — every one of them from vendored libraries. forge-std's
+`deriveKey(string mnemonic, uint32 index)` was "code targets cryptocurrency
+wallet storage". OpenZeppelin's EIP-712 doc comment was flagged for linking to
+MetaMask's documentation.
+
+Two facts fix most of that, and both are now encoded in `lib/analyzer/classify.ts`.
+
+**Solidity cannot touch your machine.** It compiles to EVM bytecode and runs in
+a sandbox with no filesystem, no network and no shell. A `.sol` file cannot
+read `~/.ssh`, cannot POST anywhere, cannot spawn a process. The one exception
+is Foundry's `vm.ffi()`, which needs `ffi = true` and has its own rule. Every
+rule now declares the execution contexts it can possibly be true in — `host`,
+`evm`, or `inert` — so host-level threats are never reported against chain code.
+
+**Most files in a repository were not written by its author.** In that same
+project, 659 of 720 files were forge-std and OpenZeppelin checked in under
+`lib/`. Vendored code is found three ways: `.gitmodules`, Foundry's convention
+of installing beside `foundry.toml`, and the universal dependency directory
+names at any depth.
+
+Vendored and test files are **not skipped** — that was tried, and it meant a
+credential stealer in `node_modules/evil/index.js` scored zero, including one
+that a `postinstall` hook ran directly. They are scanned and weighted down
+instead, and rules that already require corroboration are never weighted down
+at all. `yarn test:evasion` holds that line: a stealer must be found at
+"danger" wherever it is placed, including inside a dependency, a test
+directory, build output, or minified onto one line.
+
 ## Calibration
 
 A scanner that flags everything gets ignored on the repo that matters, so the
@@ -112,11 +144,33 @@ A dedup bug surfaced during the same work: findings were keyed on
 without line numbers — four typosquatted dependencies in one `package.json` —
 all collapsed onto one key and only the first survived.
 
-`yarn scan:corpus` runs the engine against ten real, widely used repositories
-(`express`, `prettier`, `viem`, `forge-std`, `openzeppelin-contracts`, …). Every
-one should come back clean; anything it finds is a false positive until proven
-otherwise. It needs `GITHUB_TOKEN` set — ten repos is well past the anonymous
-rate limit.
+`yarn backtest` runs the engine against eleven real, widely used repositories —
+express, axios, vite, ethers.js, forge-std, OpenZeppelin, solmate and others.
+Every one must come back "safe"; anything it finds is a false positive until
+argued otherwise. All eleven pass.
+
+Getting there meant fixing bugs that fixtures could never have surfaced:
+
+- **`.exec(` matched `RegExp.prototype.exec`**, one of the commonest calls in
+  JavaScript. It reported vite's own bundler config as critical shell spawning,
+  three times over.
+- **Bare IP literals** flagged `http://127.0.0.1:${port}` and
+  `http://192.168.1.10` — every test that starts a local server, and every dev
+  tool that logs a LAN address. Loopback and RFC1918 ranges go nowhere and are
+  now excluded.
+- **Non-ASCII counted as obfuscation**, so ethers.js's BIP-39 wordlists for
+  Japanese, Korean and Chinese were all "packed code". Entropy is per-character;
+  a language with thousands of symbols scores higher than any packer.
+- **A long single line** was read as minification, which is also what a
+  generated data table looks like. Now distinguished by what survives once
+  string literals and punctuation are stripped.
+- **A large base64 blob** is data — a font, an icon, a wordlist — unless the
+  same file also contains the code to decode it.
+- **A devcontainer lifecycle hook** was alarming in itself; axios's runs
+  `npm ci --ignore-scripts`, which is the safe form. Only the command matters.
+
+Net effect: vite 100 → 5, axios 64 → 14, ethers.js 86 → 6, and the Foundry
+project that prompted this 100 → 3.
 
 ## Large repositories
 

@@ -101,6 +101,10 @@ export interface ReportStats {
   coverage: number;
   filesFlagged: number;
   filesAnalyzedByAI: number;
+  /** Third-party code — dependencies the repo author did not write. */
+  filesVendored: number;
+  /** Tests, fixtures and mocks. */
+  filesTest: number;
   durationMs: number;
   treeTruncated: boolean;
 }

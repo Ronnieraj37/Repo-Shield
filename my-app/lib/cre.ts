@@ -144,6 +144,8 @@ export function verdictToReport(
       filesFetched: 0,
       filesFlagged: verdict.findingCount,
       filesAnalyzedByAI: 0,
+      filesVendored: 0,
+      filesTest: 0,
       durationMs: Date.now() - startedAt,
       treeTruncated: false,
     },

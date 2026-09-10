@@ -26,8 +26,16 @@ import type { FileEntry, RepoMeta } from "./analyzer/types";
  * request count is irrelevant.
  */
 
-/** Repos above this are not worth downloading whole. `repo.size` is in KB. */
-const MAX_REPO_KB = 80_000;
+/**
+ * A loose upper bound, not a real limit.
+ *
+ * `repo.size` is the size of the git repository *including all history*, which
+ * says very little about one commit: ethers.js reports 181 MB and its tarball
+ * is 10 MB. Gating tightly on it rejected repositories that would have been
+ * cheap to scan. The working tree can never exceed the git size, so this only
+ * rules out the genuinely enormous — the real limit is on the download itself.
+ */
+const MAX_REPO_KB = 400_000;
 const MAX_ARCHIVE_BYTES = 90 * 1024 * 1024;
 /** Analysing more than this much text buys nothing and costs seconds. */
 const MAX_TEXT_BYTES = 24 * 1024 * 1024;
@@ -87,6 +95,7 @@ export async function fetchRepoArchive(
     },
     responseType: "bytes",
     followRedirects: false,
+    maxBytes: MAX_ARCHIVE_BYTES,
   });
 
   if (response.status >= 300 && response.status < 400) {
@@ -97,6 +106,7 @@ export async function fetchRepoArchive(
       method: "GET",
       headers: { "user-agent": "RepoShield" },
       responseType: "bytes",
+      maxBytes: MAX_ARCHIVE_BYTES,
     });
   }
 
