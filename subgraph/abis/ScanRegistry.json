@@ -1,0 +1,197 @@
+[
+  {
+    "type": "function",
+    "name": "latest",
+    "inputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "commit",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "threatScore",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "verdict",
+        "type": "uint8",
+        "internalType": "enum ScanRegistry.Verdict"
+      },
+      {
+        "name": "scannedAt",
+        "type": "uint40",
+        "internalType": "uint40"
+      },
+      {
+        "name": "reporter",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "count",
+        "type": "uint32",
+        "internalType": "uint32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "publish",
+    "inputs": [
+      {
+        "name": "repo",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "commit",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "threatScore",
+        "type": "uint16",
+        "internalType": "uint16"
+      },
+      {
+        "name": "verdict",
+        "type": "uint8",
+        "internalType": "enum ScanRegistry.Verdict"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "totalPublications",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "verdictOf",
+    "inputs": [
+      {
+        "name": "repo",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ScanRegistry.Scan",
+        "components": [
+          {
+            "name": "commit",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "threatScore",
+            "type": "uint16",
+            "internalType": "uint16"
+          },
+          {
+            "name": "verdict",
+            "type": "uint8",
+            "internalType": "enum ScanRegistry.Verdict"
+          },
+          {
+            "name": "scannedAt",
+            "type": "uint40",
+            "internalType": "uint40"
+          },
+          {
+            "name": "reporter",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "count",
+            "type": "uint32",
+            "internalType": "uint32"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "event",
+    "name": "ScanPublished",
+    "inputs": [
+      {
+        "name": "repoId",
+        "type": "bytes32",
+        "indexed": true,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "repo",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      },
+      {
+        "name": "commit",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
+      },
+      {
+        "name": "threatScore",
+        "type": "uint16",
+        "indexed": false,
+        "internalType": "uint16"
+      },
+      {
+        "name": "verdict",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "enum ScanRegistry.Verdict"
+      },
+      {
+        "name": "reporter",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "scannedAt",
+        "type": "uint40",
+        "indexed": false,
+        "internalType": "uint40"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "InvalidVerdict",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ScoreTooHigh",
+    "inputs": []
+  }
+]

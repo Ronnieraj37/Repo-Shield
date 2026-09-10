@@ -1,0 +1,26 @@
+specVersion: 1.0.0
+schema:
+  file: ./schema.graphql
+dataSources:
+  - kind: ethereum
+    name: ScanRegistry
+    network: sepolia
+    source:
+      address: "0x0000000000000000000000000000000000000000"
+      abi: ScanRegistry
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.9
+      language: wasm/assemblyscript
+      entities:
+        - Repo
+        - Publication
+        - Registry
+      abis:
+        - name: ScanRegistry
+          file: ./abis/ScanRegistry.json
+      eventHandlers:
+        - event: ScanPublished(indexed bytes32,string,bytes32,uint16,uint8,indexed address,uint40)
+          handler: handleScanPublished
+      file: ./src/mapping.ts

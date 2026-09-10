@@ -1,0 +1,33 @@
+# The latest verdict for each repository, updated in place on every publish.
+# This is what "has anyone flagged owner/repo?" reads.
+type Repo @entity(immutable: false) {
+  id: ID! # keccak256("owner/repo"), hex
+  name: String! # "owner/repo"
+  commit: Bytes! # the most recently analysed commit
+  threatScore: Int! # 0-100
+  verdict: String! # "Safe" | "Caution" | "Danger"
+  reporter: Bytes! # who last published
+  scannedAt: BigInt! # unix seconds of the latest publish
+  publishCount: Int! # times this repo has been published
+}
+
+# Every publish, kept forever. This is the append-only feed of the registry.
+type Publication @entity(immutable: true) {
+  id: ID! # txHash-logIndex
+  repo: Repo!
+  name: String!
+  commit: Bytes!
+  threatScore: Int!
+  verdict: String!
+  reporter: Bytes!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+# One row, id "global", for headline totals.
+type Registry @entity(immutable: false) {
+  id: ID!
+  totalPublications: BigInt!
+  dangerCount: BigInt!
+  repoCount: BigInt!
+}

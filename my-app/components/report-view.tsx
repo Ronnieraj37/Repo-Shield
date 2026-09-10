@@ -16,6 +16,7 @@ import { countBySeverity } from "@/lib/analyzer/scorer";
 import { ActionPlan } from "./action-plan";
 import { CopyButton } from "./copy-button";
 import { FindingCard } from "./finding-card";
+import { RegistryPanel } from "./registry-panel";
 import { ScoreRing } from "./score-ring";
 import { SEVERITY_COLOR, VERDICT_COLOR, VERDICT_LABEL } from "./severity";
 
@@ -92,7 +93,9 @@ export function ReportView({ report }: { report: ThreatReport }) {
               no findings
             </span>
           ) : null}
-          {report.confidential ? (
+          <RegistryPanel report={report} />
+
+      {report.confidential ? (
             <span className="font-mono text-xs text-[var(--color-muted)]">
               {report.stats.filesFlagged} finding
               {report.stats.filesFlagged === 1 ? "" : "s"}, detail sealed in the enclave

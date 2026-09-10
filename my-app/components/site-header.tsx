@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Cpu, History, LogOut, Shield } from "lucide-react";
+import { Cpu, Database, History, LogOut, Shield } from "lucide-react";
 
 interface Me {
   user: { login: string; name: string | null; avatarUrl: string } | null;
@@ -56,6 +56,15 @@ export function SiteHeader() {
           >
             <Cpu size={14} />
             Confidential
+          </Link>
+          <Link
+            href="/registry"
+            className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 transition-colors hover:text-[var(--color-text)] ${
+              pathname === "/registry" ? "text-[var(--color-text)]" : "text-[var(--color-muted)]"
+            }`}
+          >
+            <Database size={14} />
+            Registry
           </Link>
           <Link
             href="/history"
