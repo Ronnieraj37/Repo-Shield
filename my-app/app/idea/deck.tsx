@@ -222,7 +222,7 @@ function renderSlide(slide: (typeof SLIDES)[number], activeNow: boolean) {
           </Kicker>
           <h2 className="max-w-4xl text-4xl font-semibold leading-[1.1] tracking-tight sm:text-5xl">
             This isn&rsquo;t hypothetical.{" "}
-            <span className="text-[var(--color-critical)]">One of these was sent to me.</span>
+            <span className="text-[var(--color-critical)]">It happened to me, too.</span>
           </h2>
           <VictimStack />
           <p className="mt-6 max-w-3xl text-sm leading-relaxed text-[var(--color-muted)]">
@@ -444,7 +444,7 @@ function VictimStack() {
   // The screenshots are real LinkedIn scam-warning posts, blurred so no
   // individual is identifiable — the point is the *volume* of identical
   // reports, not any one person's words. Fanned like a pile of evidence.
-  const cards = [1, 2, 3, 4, 5];
+  const cards = [1, 2, 3, 4];
   const mid = (cards.length - 1) / 2;
   return (
     <div className="relative mx-auto mt-10 flex h-[300px] w-full max-w-3xl items-center justify-center sm:h-[340px]">
@@ -470,7 +470,7 @@ function VictimStack() {
         );
       })}
       <div className="pointer-events-none absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-[var(--color-border-strong)] bg-[var(--color-bg)] px-3 py-1 font-mono text-[0.6rem] text-[var(--color-muted)]">
-        real LinkedIn posts · blurred
+        real LinkedIn posts
       </div>
     </div>
   );
