@@ -3,8 +3,9 @@
   "sdkVersion": "1.20.0",
   "workflow": "reposhield-staging",
   "entry": "cre/reposhield/main.ts",
-  "binaryHash": "f10c90e49a4fbd415574af716de32e18b3d029b1af9b064b88ba8091a8cb21d4",
+  "binaryHash": "c7b3bd6adfa00f63d23f643e67a87814f4e75eb2e98acc0e472326b82766bf2e",
   "binaryBytes": 2749861,
   "builtAt": "2026-09-09T18:55:55.675916Z",
-  "command": "cre workflow build ./reposhield --target staging-settings"
+  "command": "cre workflow build ./reposhield --target staging-settings",
+  "note": "hash matches the simulated binary in simulation-transcript.txt"
 }
