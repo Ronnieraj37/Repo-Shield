@@ -12,6 +12,7 @@ interface Me {
 
 export function SiteHeader() {
   const pathname = usePathname();
+  const hidden = pathname === "/idea";
   const [me, setMe] = useState<Me | null>(null);
 
   useEffect(() => {
@@ -28,6 +29,8 @@ export function SiteHeader() {
       cancelled = true;
     };
   }, [pathname]);
+
+  if (hidden) return null;
 
   return (
     <header className="relative z-10 border-b border-[var(--color-border)]">

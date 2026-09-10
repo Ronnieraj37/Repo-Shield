@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import "./globals.css";
 
@@ -21,13 +22,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="flex min-h-full flex-col">
         <SiteHeader />
         <main className="relative z-10 flex-1">{children}</main>
-        <footer className="relative z-10 border-t border-[var(--color-border)] py-5">
-          <div className="mx-auto max-w-6xl px-5 text-xs text-[var(--color-faint)]">
-            Scan results are stored in your browser and never sent to our servers.
-            RepoShield reports evidence about what a repository contains — it cannot
-            prove that code is safe.
-          </div>
-        </footer>
+        <SiteFooter />
       </body>
     </html>
   );
