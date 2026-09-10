@@ -88,7 +88,7 @@ export function RegistryView({
                         <ExternalLink size={11} className="shrink-0 text-[var(--color-faint)]" />
                       </a>
                       <p className="mt-0.5 font-mono text-xs text-[var(--color-faint)]">
-                        {entry.commit.slice(0, 9)} · {relativeTime(entry.scannedAt)}
+                        {shortCommit(entry.commit)} · {relativeTime(entry.scannedAt)}
                         {entry.publishCount > 1 ? ` · flagged ${entry.publishCount}×` : ""}
                       </p>
                     </div>
@@ -128,6 +128,12 @@ function verdictKey(v: RegistryEntry["verdict"]): Verdict {
 }
 
 type Verdict = "safe" | "caution" | "danger";
+
+/** A git SHA is stored left-padded in a bytes32; recover its meaningful tail. */
+function shortCommit(commitHex: string): string {
+  const hex = commitHex.replace(/^0x/, "").replace(/^0+/, "");
+  return hex ? `${hex.slice(0, 7)}` : "—";
+}
 
 function relativeTime(unixSeconds: number): string {
   const seconds = Date.now() / 1000 - unixSeconds;
