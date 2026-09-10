@@ -15,14 +15,17 @@
     "test:evasion": "tsx scripts/test-evasion.mts"
   },
   "dependencies": {
+    "json-stable-stringify": "^1.3.0",
     "lucide-react": "^1.42.0",
     "next": "16.3.4",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "viem": "^2.56.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/json-stable-stringify": "^1.2.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",

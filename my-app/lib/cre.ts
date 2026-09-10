@@ -1,6 +1,8 @@
 import type { HttpClient } from "./analyzer/http";
 import type { ThreatReport } from "./analyzer/types";
 import { sha256Hex } from "./analyzer/portable";
+import { buildRequest, canonicalBody, createJwt } from "./cre-jwt";
+import type { Hex } from "viem";
 
 /**
  * Client for the deployed Confidential Workflow.
@@ -28,8 +30,16 @@ export interface CreVerdict {
 
 export class CreError extends Error {}
 
+/**
+ * Confidential scanning needs all three: somewhere to send the request, which
+ * workflow to run, and a key authorised to trigger it.
+ */
 export function creConfigured(): boolean {
-  return Boolean(process.env.CRE_WORKFLOW_URL);
+  return Boolean(
+    process.env.CRE_GATEWAY_URL &&
+      process.env.CRE_WORKFLOW_ID &&
+      process.env.CRE_SIGNER_PRIVATE_KEY,
+  );
 }
 
 export async function runConfidentialScan(
@@ -37,38 +47,65 @@ export async function runConfidentialScan(
   ref: string | undefined,
   http: HttpClient,
 ): Promise<CreVerdict> {
-  const url = process.env.CRE_WORKFLOW_URL;
-  if (!url) {
+  const gateway = process.env.CRE_GATEWAY_URL;
+  const workflowId = process.env.CRE_WORKFLOW_ID;
+  const privateKey = process.env.CRE_SIGNER_PRIVATE_KEY as Hex | undefined;
+
+  if (!gateway || !workflowId || !privateKey) {
     throw new CreError(
-      "Confidential scanning is not configured on this server. Deploy the CRE workflow and set CRE_WORKFLOW_URL.",
+      "Confidential scanning is not configured on this server. Deploy the CRE workflow, then set CRE_GATEWAY_URL, CRE_WORKFLOW_ID and CRE_SIGNER_PRIVATE_KEY.",
     );
   }
 
+  const request = buildRequest(workflowId, { repo, ref });
+  const jwt = await createJwt(request, privateKey);
+
   const response = await http.send({
-    url,
+    url: gateway,
     method: "POST",
     headers: {
       "content-type": "application/json",
-      // The HTTP trigger validates request signatures against the
-      // `authorizedKeys` baked into the workflow config at deploy time.
-      ...(process.env.CRE_WORKFLOW_KEY
-        ? { authorization: `Bearer ${process.env.CRE_WORKFLOW_KEY}` }
-        : {}),
+      authorization: `Bearer ${jwt}`,
     },
-    body: JSON.stringify({ repo, ref }),
+    // The canonical serialisation, not JSON.stringify — the gateway hashes the
+    // body it receives and compares it to the digest inside the JWT.
+    body: canonicalBody(request),
   });
 
   if (response.status !== 200) {
     throw new CreError(
-      `The confidential workflow returned ${response.status}. ${response.body.slice(0, 200)}`,
+      `The CRE gateway returned ${response.status}. ${response.body.slice(0, 200)}`,
     );
   }
 
+  let envelope: {
+    result?: CreVerdict | { value?: CreVerdict };
+    error?: { message?: string };
+  };
   try {
-    return JSON.parse(response.body) as CreVerdict;
+    envelope = JSON.parse(response.body);
   } catch {
-    throw new CreError("The confidential workflow returned an unreadable response.");
+    throw new CreError("The CRE gateway returned an unreadable response.");
   }
+
+  if (envelope.error) {
+    throw new CreError(
+      `The workflow failed: ${envelope.error.message ?? "no detail given"}`,
+    );
+  }
+
+  // JSON-RPC wraps the handler's return value; some gateway versions nest it
+  // once more under `value`.
+  const result = envelope.result;
+  const verdict =
+    result && typeof result === "object" && "value" in result
+      ? (result as { value?: CreVerdict }).value
+      : (result as CreVerdict | undefined);
+
+  if (!verdict?.commit) {
+    throw new CreError("The workflow returned no verdict.");
+  }
+  return verdict;
 }
 
 /**

@@ -6,13 +6,13 @@ Compiling workflow...
 ✓ Workflow compiled
 ✓ Simulation limits enabled
   HTTP: req=120kb resp=250kb timeout=10s | ConfHTTP: req=125kb resp=500kb timeout=1m30s | Consensus obs=25kb | ChainWrite evm_report=50kb evm_gas=10000000 solana_report=265b solana_cu=300000 | WASM binary=100mb compressed=20mb
-  Binary hash: d4c1d6856af35a2c352679c34a9f41e3bfc160a5be18f3a14208eb070abd6471
-  Config hash: 9728eef69d862610054b7a1d1fcfe32a2e8b7600ccf6f7b203a0edf4c07fc879
+  Binary hash: c7b3bd6adfa00f63d23f643e67a87814f4e75eb2e98acc0e472326b82766bf2e
+  Config hash: 2bc714387d2099ce31f436859d3fff327e8dbaa68f093b0f90ffd408e5dec61f
 ✓ Loaded JSON from file: /Users/roshanrajsingh/Documents/ETHOnline/my-app/cre/payload.json
 ✓ Created HTTP trigger payload with 1 fields
-2026-09-10T12:20:35Z [SIMULATION] Simulator Initialized
+2026-09-10T12:45:00Z [SIMULATION] Simulator Initialized
 
-2026-09-10T12:20:35Z [SIMULATION] Running trigger trigger=http-trigger@1.0.0-alpha
+2026-09-10T12:45:00Z [SIMULATION] Running trigger trigger=http-trigger@1.0.0-alpha
 ╭────────────────────────────────────────────────────────────────────────────────────────────────────╮
 │ Handler requested TEE Execution                                                                    │
 │ The simulator is not a real TEE, and is meant to debug.                                            │
@@ -22,11 +22,11 @@ Compiling workflow...
 │                                                                                                    │
 ╰────────────────────────────────────────────────────────────────────────────────────────────────────╯
 
-2026-09-10T12:20:35Z [USER LOG] reposhield-scan-request repo=reposhield-samples/senior-web3-frontend-task
-2026-09-10T12:20:35Z [USER LOG] reposhield-getsecrets-ok
-2026-09-10T12:20:35Z [USER LOG] analyzing reposhield-samples/senior-web3-frontend-task@5ff5b0d — 8 of 8 candidate files read
-2026-09-10T12:20:35Z [USER LOG] verdict "danger" (100/100) from 19 findings
-2026-09-10T12:20:35Z [USER LOG] reposhield-verdict repo=reposhield-samples/senior-web3-frontend-task score=100 verdict=danger findings=19 critical=12
+2026-09-10T12:45:00Z [USER LOG] reposhield-scan-request repo=reposhield-samples/senior-web3-frontend-task
+2026-09-10T12:45:00Z [USER LOG] reposhield-getsecrets-ok
+2026-09-10T12:45:00Z [USER LOG] analyzing reposhield-samples/senior-web3-frontend-task@5ff5b0d — 8 of 8 candidate files read
+2026-09-10T12:45:00Z [USER LOG] verdict "danger" (100/100) from 19 findings
+2026-09-10T12:45:00Z [USER LOG] reposhield-verdict repo=reposhield-samples/senior-web3-frontend-task score=100 verdict=danger findings=19 critical=12
 
 ✓ Workflow Simulation Result:
 {
@@ -34,13 +34,13 @@ Compiling workflow...
   "criticalCount": 12,
   "findingCount": 19,
   "repo": "reposhield-samples/senior-web3-frontend-task",
-  "scannedAt": "2026-09-10T06:50:35.234Z",
+  "scannedAt": "2026-09-10T07:15:00.860Z",
   "threatScore": 100,
   "verdict": "danger"
 }
 
-2026-09-10T12:20:35Z [SIMULATION] Execution finished signal received
-2026-09-10T12:20:35Z [SIMULATION] Skipping WorkflowEngineV2
+2026-09-10T12:45:00Z [SIMULATION] Execution finished signal received
+2026-09-10T12:45:00Z [SIMULATION] Skipping WorkflowEngineV2
 
 ╭──────────────────────────────────────────────────────╮
 │ Simulation complete! Ready to deploy your workflow?  │

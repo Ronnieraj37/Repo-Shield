@@ -2,5 +2,6 @@
   "githubTokenSecretId": "github_token",
   "geminiApiKeySecretId": "gemini_api_key",
   "githubApiBase": "http://127.0.0.1:8787/github",
-  "geminiEndpointBase": "http://127.0.0.1:8787/gemini/v1beta"
+  "geminiEndpointBase": "http://127.0.0.1:8787/gemini/v1beta",
+  "authorizedKeys": []
 }

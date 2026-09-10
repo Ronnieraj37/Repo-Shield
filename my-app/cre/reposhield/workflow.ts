@@ -38,6 +38,14 @@ export const configSchema = z.object({
    */
   githubApiBase: z.string(),
   geminiEndpointBase: z.string(),
+  /**
+   * EVM addresses permitted to trigger this workflow.
+   *
+   * The HTTP trigger authenticates callers by an ECDSA signature over the
+   * JWT, so an empty list means the deployed workflow accepts nothing. This
+   * holds the address of the key the web app signs with.
+   */
+  authorizedKeys: z.array(z.string()).default([]),
 });
 
 export type Config = z.infer<typeof configSchema>;
@@ -89,13 +97,19 @@ export function initWorkflow(config: Config) {
   const httpTrigger = new cre.capabilities.HTTPCapability();
 
   return [
-    // `authorizedKeys` is populated at deploy time with the public key that
-    // signs scan requests; left empty the trigger accepts none.
-    //
     // `{}` as the TEE constraint means any registered enclave, any region.
     // Pinning would read `[{ tee: "nitro", regions: ["us-west-2"] }]` — the
     // only registered combination today, so pinning buys a failure mode and
     // nothing else.
-    cre.handlerInTee(httpTrigger.trigger({}), onScanRequest, {}),
+    cre.handlerInTee(
+      httpTrigger.trigger({
+        authorizedKeys: config.authorizedKeys.map((publicKey) => ({
+          type: "KEY_TYPE_ECDSA_EVM" as const,
+          publicKey,
+        })),
+      }),
+      onScanRequest,
+      {},
+    ),
   ];
 }

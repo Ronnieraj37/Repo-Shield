@@ -2,5 +2,6 @@
   "githubTokenSecretId": "github_token",
   "geminiApiKeySecretId": "gemini_api_key",
   "githubApiBase": "https://api.github.com",
-  "geminiEndpointBase": "https://generativelanguage.googleapis.com/v1beta"
+  "geminiEndpointBase": "https://generativelanguage.googleapis.com/v1beta",
+  "authorizedKeys": []
 }
