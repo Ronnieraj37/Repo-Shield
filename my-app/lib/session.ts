@@ -215,7 +215,13 @@ export async function resolveToken(pastedToken?: string): Promise<{
  */
 export async function appUrl(): Promise<string> {
   const explicit = process.env.NEXT_PUBLIC_APP_URL?.trim();
-  if (explicit) return explicit.replace(/\/$/, "");
+  // Honour an explicit override only when it isn't localhost. A localhost value
+  // left in a deployed environment would send GitHub's OAuth redirect_uri back
+  // to the developer's laptop instead of the deployed app, breaking sign-in —
+  // so we ignore it and fall through to the real origin below.
+  if (explicit && !/^https?:\/\/(localhost|127\.0\.0\.1)/i.test(explicit)) {
+    return explicit.replace(/\/$/, "");
+  }
 
   const productionDomain = process.env.VERCEL_PROJECT_PRODUCTION_URL?.trim();
   if (productionDomain) return `https://${productionDomain.replace(/\/$/, "")}`;
