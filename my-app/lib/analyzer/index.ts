@@ -100,6 +100,7 @@ export async function analyzeRepo(
       repoName,
       options.http,
       options.geminiEndpointBase,
+      options.geminiModel,
     );
     aiFindings = dedupeAgainstStatic(result.findings, staticFindings);
     aiSummary = result.summary;

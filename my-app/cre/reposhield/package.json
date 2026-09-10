@@ -12,11 +12,12 @@
     "simulate": "cre workflow simulate . --target staging-settings -e ../.env --http-payload ../payload.json"
   },
   "dependencies": {
-    "@chainlink/cre-sdk": "1.20.0"
+    "@chainlink/cre-sdk": "1.18.0",
+    "zod": "3.25.76"
   },
   "devDependencies": {
-    "typescript": "^5",
-    "tsx": "^4.19.2"
+    "tsx": "^4.19.2",
+    "typescript": "^5"
   },
   "main": "dist/main.js"
 }

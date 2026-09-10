@@ -28,12 +28,25 @@ import type { Finding, Severity } from "./types";
  * certainty without waiting out a single model's backoff.
  */
 const MODEL_CHAIN = [
-  process.env.GEMINI_MODEL,
   "gemini-3.6-flash",
   "gemini-flash-lite-latest",
   "gemini-3.1-flash-lite",
   "gemini-3.5-flash",
-].filter((m): m is string => Boolean(m));
+];
+
+/**
+ * The engine reads no ambient environment.
+ *
+ * This list used to begin with `process.env.GEMINI_MODEL`, evaluated at module
+ * scope. `process` does not exist in the CRE WASM runtime, so merely importing
+ * the analyzer threw — and the failure surfaced as `wasm trap: unreachable`
+ * during the workflow's subscribe phase, which points nowhere near the cause.
+ * Overrides come in through `AnalyzeOptions` instead, from a caller that knows
+ * whether it has an environment to read.
+ */
+function modelChain(override?: string): string[] {
+  return override ? [override, ...MODEL_CHAIN] : MODEL_CHAIN;
+}
 
 /** How many models are raced simultaneously on the first round. */
 const HEDGE_WIDTH = 2;
@@ -122,6 +135,7 @@ export async function analyzeWithGemini(
   repoName: string,
   http: HttpClient,
   endpointBase: string = DEFAULT_GEMINI_BASE,
+  model?: string,
 ): Promise<AIResult> {
   const empty: AIResult = {
     findings: [],
@@ -138,7 +152,7 @@ export async function analyzeWithGemini(
 
   let raw: string;
   try {
-    raw = await callGemini(prompt, apiKey, http, endpointBase);
+    raw = await callGemini(prompt, apiKey, http, endpointBase, model);
   } catch (error) {
     return {
       ...empty,
@@ -230,11 +244,13 @@ async function callGemini(
   apiKey: string,
   http: HttpClient,
   endpointBase: string,
+  modelOverride?: string,
 ): Promise<string> {
   const body = buildRequestBody(prompt);
 
-  const hedged = MODEL_CHAIN.slice(0, HEDGE_WIDTH);
-  const remaining = MODEL_CHAIN.slice(HEDGE_WIDTH);
+  const chain = modelChain(modelOverride);
+  const hedged = chain.slice(0, HEDGE_WIDTH);
+  const remaining = chain.slice(HEDGE_WIDTH);
 
   try {
     return await Promise.any(

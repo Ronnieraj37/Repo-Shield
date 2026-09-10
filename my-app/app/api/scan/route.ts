@@ -87,6 +87,7 @@ export async function POST(request: Request) {
 
 async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
   const geminiApiKey = process.env.GEMINI_API_KEY;
+  const geminiModel = process.env.GEMINI_MODEL;
   const http = createFetchClient();
 
   // --- Bundled sample: same pipeline, no network ---------------------------
@@ -104,6 +105,7 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
     });
     const report = await analyzeRepo(sampleToAnalyzeInput(sample), {
       geminiApiKey,
+      geminiModel,
       http,
       onEvent: send,
     });
@@ -231,7 +233,7 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
 
   const report = await analyzeRepo(
     { repo, tree, contents, treeTruncated: truncated, filesConsidered: considered },
-    { geminiApiKey, http, onEvent: send },
+    { geminiApiKey, geminiModel, http, onEvent: send },
   );
 
   send({ type: "done", report });

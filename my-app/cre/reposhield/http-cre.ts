@@ -1,58 +1,51 @@
-import { cre, httpRequest } from "@chainlink/cre-sdk";
-import type { Runtime, TeeRuntime } from "@chainlink/cre-sdk";
+import { cre, text } from "@chainlink/cre-sdk";
+import type { TeeRuntime } from "@chainlink/cre-sdk";
 import type { HttpClient, HttpRequest, HttpResponse } from "../../lib/analyzer/http";
-import { utf8Decode } from "../../lib/analyzer/portable";
 
 /**
- * An `HttpClient` backed by CRE's confidential-http capability.
+ * An `HttpClient` backed by CRE's HTTP capability, called from inside the TEE.
  *
- * This is the whole reason the analyzer takes an injected transport: inside
- * the enclave there is no `fetch`, and outbound requests must go through a
- * capability so that the request — GitHub's API URL carrying the developer's
- * OAuth token, and the Gemini call carrying their private source code — is
- * made from inside the TEE rather than from the node.
+ * This is why the analyzer takes an injected transport: there is no `fetch`
+ * inside the enclave, and outbound requests must go through a capability so
+ * that the GitHub API call carrying the developer's OAuth token, and the
+ * Gemini call carrying their private source, are made from within the TEE
+ * rather than by the node.
  *
- * Two shape differences from `fetch` are handled here:
- *   - the call is synchronous, returning a handle whose `.result()` blocks,
- *     so it is wrapped to satisfy the promise-based interface
- *   - the response body arrives as bytes, not text
+ * Note which client this is. `ConfidentialHTTPClient` looks like the obvious
+ * choice by name and is the wrong one — it has no `TeeRuntime` overload and is
+ * not meant to be called from a TEE handler. `HTTPClient.sendRequest()` does
+ * have one, so passing the `TeeRuntime` straight in is what keeps the request
+ * and response payloads confidential from node operators.
+ *
+ * Two shape differences from `fetch` are handled here: the call is synchronous,
+ * returning a handle whose `.result()` blocks, and the response body arrives as
+ * bytes rather than text.
  */
-export function createConfidentialHttpClient(
-  runtime: TeeRuntime<unknown>,
-): HttpClient {
-  const client = new cre.capabilities.ConfidentialHTTPClient();
+export function createTeeHttpClient(runtime: TeeRuntime<unknown>): HttpClient {
+  const client = new cre.capabilities.HTTPClient();
 
   return {
     async send(request: HttpRequest): Promise<HttpResponse> {
       try {
-        // `ConfidentialHTTPRequest` wraps the HTTP request itself alongside an
-        // optional list of vault secrets. The generic is passed explicitly
-        // because `sendRequest`'s parameter is a conditional type
-        // (`CapabilityInput<...>`) and TypeScript cannot infer a type variable
-        // from one of those — left to inference it widens to `unknown` and
-        // rejects every field.
         const response = client
-          .sendRequest<{ request: ReturnType<typeof httpRequest> }>(
-            // Typed against `Runtime`, but a `TeeRuntime` carries the same
-            // `callCapability` surface and is what we must pass — routing this
-            // through `usingTheDons()` would issue the request from outside
-            // the enclave, defeating the point.
-            runtime as unknown as Runtime<unknown>,
-            {
-              request: httpRequest({
-                url: request.url,
-                method: request.method ?? "GET",
-                headers: request.headers,
-                body: request.body,
-              }),
-            },
-          )
+          .sendRequest(runtime, {
+            url: request.url,
+            method: request.method ?? "GET",
+            ...(request.headers
+              ? {
+                  multiHeaders: Object.fromEntries(
+                    Object.entries(request.headers).map(([name, value]) => [
+                      name,
+                      { values: [value] },
+                    ]),
+                  ),
+                }
+              : {}),
+            ...(request.body ? { body: request.body } : {}),
+          })
           .result();
 
-        return {
-          status: response.statusCode,
-          body: utf8Decode(response.body),
-        };
+        return { status: response.statusCode, body: text(response) };
       } catch (error) {
         // Mirror the web adapter: transport failures come back as a response
         // so callers have exactly one code path to handle.

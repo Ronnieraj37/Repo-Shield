@@ -166,6 +166,8 @@ export interface AnalyzeOptions {
   geminiApiKey?: string;
   /** Override the Gemini API origin (used by CRE simulation against a mock). */
   geminiEndpointBase?: string;
+  /** Pin a specific model. The engine never reads this from the environment. */
+  geminiModel?: string;
   /** Skip phase 2 entirely (offline dev, tests). */
   skipAI?: boolean;
   onEvent?: (event: ScanEvent) => void;

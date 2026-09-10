@@ -1,13 +1,18 @@
 # ==========================================================================
 # CRE PROJECT SETTINGS — RepoShield
 # ==========================================================================
-# RepoShield's workflow talks to GitHub and Gemini, not to a chain, so no RPC
-# endpoints are required. The targets exist because the CLI selects settings by
-# target name.
+# RepoShield's workflow talks to GitHub and Gemini, not to a chain. The RPC
+# entry is required by the CLI regardless of whether the workflow reads or
+# writes onchain, so this is the public Sepolia endpoint the official
+# templates use.
 # ==========================================================================
 
 staging-settings:
-  rpcs: []
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com
 
 production-settings:
-  rpcs: []
+  rpcs:
+    - chain-name: ethereum-testnet-sepolia
+      url: https://ethereum-sepolia-rpc.publicnode.com

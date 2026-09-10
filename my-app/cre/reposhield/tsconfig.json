@@ -1,27 +1,19 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": [
-      "ES2022"
-    ],
-    "module": "esnext",
+    "target": "esnext",
+    "module": "ESNext",
     "moduleResolution": "bundler",
+    "lib": [
+      "ESNext"
+    ],
+    "outDir": "./dist",
     "strict": true,
-    "noEmit": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "isolatedModules": true,
-    "resolveJsonModule": true
+    "forceConsistentCasingInFileNames": true,
+    "types": []
   },
   "include": [
-    "main.ts",
-    "scan.ts",
-    "http-cre.ts",
-    "../../lib/analyzer/**/*.ts",
-    "../../lib/github.ts"
-  ],
-  "exclude": [
-    "test",
-    "node_modules"
+    "main.ts"
   ]
 }
