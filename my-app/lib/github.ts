@@ -47,6 +47,8 @@ export interface ParsedRepoInput {
   name: string;
   /** Branch, tag, or SHA if the input carried one. */
   ref?: string;
+  /** Which host the URL pointed at. Bare `owner/repo` defaults to GitHub. */
+  host: "github" | "gitlab" | "bitbucket";
 }
 
 /**
@@ -60,26 +62,32 @@ export function parseRepoInput(raw: string): ParsedRepoInput {
   const input = raw.trim();
   if (!input) throw new GitHubError("INVALID_INPUT", "Enter a repository.");
 
-  const patterns: RegExp[] = [
-    // https://github.com/owner/repo(/tree/ref)(.git)
-    /^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/(?:tree|commit|blob)\/([^/\s?#]+))?(?:[/?#].*)?$/i,
-    // git@github.com:owner/repo.git
-    /^git@github\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i,
-    // owner/repo
-    /^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/,
+  // host, ref-path-marker, [captures: owner, name, ref]
+  const patterns: { host: ParsedRepoInput["host"]; re: RegExp }[] = [
+    // github.com/owner/repo(/tree|commit|blob/ref)
+    { host: "github", re: /^(?:https?:\/\/)?(?:www\.)?github\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/(?:tree|commit|blob)\/([^/\s?#]+))?(?:[/?#].*)?$/i },
+    { host: "github", re: /^git@github\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i },
+    // gitlab.com/owner/repo(/-/tree/ref)
+    { host: "gitlab", re: /^(?:https?:\/\/)?(?:www\.)?gitlab\.com\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/-\/(?:tree|commit|blob)\/([^/\s?#]+))?(?:[/?#].*)?$/i },
+    { host: "gitlab", re: /^git@gitlab\.com:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i },
+    // bitbucket.org/workspace/repo(/src/ref)
+    { host: "bitbucket", re: /^(?:https?:\/\/)?(?:www\.)?bitbucket\.org\/([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/(?:src|commits)\/([^/\s?#]+))?(?:[/?#].*)?$/i },
+    { host: "bitbucket", re: /^git@bitbucket\.org:([\w.-]+)\/([\w.-]+?)(?:\.git)?$/i },
+    // bare owner/repo → GitHub
+    { host: "github", re: /^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/ },
   ];
 
-  for (const pattern of patterns) {
-    const match = input.match(pattern);
+  for (const { host, re } of patterns) {
+    const match = input.match(re);
     if (!match) continue;
     const [, owner, name, ref] = match;
     if (owner === "." || name === ".") continue;
-    return { owner, name, ref: ref || undefined };
+    return { owner, name, ref: ref || undefined, host };
   }
 
   throw new GitHubError(
     "INVALID_INPUT",
-    "That does not look like a GitHub repository. Try a URL like github.com/owner/repo, or just owner/repo.",
+    "That does not look like a repository URL. Try github.com/owner/repo (or gitlab.com / bitbucket.org), or just owner/repo.",
   );
 }
 

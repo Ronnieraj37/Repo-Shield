@@ -81,6 +81,8 @@ export interface ActionStep {
 export interface RepoMeta {
   owner: string;
   name: string;
+  /** Which host the repo lives on. Defaults to GitHub when unset. */
+  host?: "github" | "gitlab" | "bitbucket";
   url: string;
   ref: string;
   commit: string;

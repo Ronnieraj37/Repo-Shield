@@ -38,8 +38,8 @@ import type { FileEntry, RepoMeta } from "./analyzer/types";
 const MAX_REPO_KB = 400_000;
 const MAX_ARCHIVE_BYTES = 90 * 1024 * 1024;
 /** Analysing more than this much text buys nothing and costs seconds. */
-const MAX_TEXT_BYTES = 24 * 1024 * 1024;
-const MAX_FILE_BYTES = 400_000;
+export const MAX_TEXT_BYTES = 24 * 1024 * 1024;
+export const MAX_FILE_BYTES = 400_000;
 
 /**
  * Vendored and generated trees. Their contents are not the repo author's code,
@@ -63,7 +63,7 @@ export interface ArchiveResult {
   archiveBytes: number;
 }
 
-function isAnalysable(path: string): boolean {
+export function isAnalysable(path: string): boolean {
   if (IGNORED.test(path)) return false;
   return ANALYSABLE.test(path) || ANALYSABLE_NAMES.test(path);
 }
@@ -124,14 +124,22 @@ export async function fetchRepoArchive(
   }
 
   if (response.status !== 200 || !response.bytes) return null;
-  if (response.bytes.length > MAX_ARCHIVE_BYTES) return null;
+  return archiveBytesToResult(response.bytes);
+}
+
+/**
+ * Turn a gzipped repository tarball into the analyzer's inputs.
+ *
+ * Shared by every provider: GitHub, GitLab and Bitbucket all serve a gzip
+ * tarball whose first path segment is a wrapper directory, which `extractTarGz`
+ * already strips — so the same extraction works for all three.
+ */
+export function archiveBytesToResult(bytes: Uint8Array): ArchiveResult | null {
+  if (bytes.length > MAX_ARCHIVE_BYTES) return null;
 
   let entries;
   try {
-    entries = extractTarGz(response.bytes, {
-      maxFileBytes: MAX_FILE_BYTES,
-      filter: isAnalysable,
-    });
+    entries = extractTarGz(bytes, { maxFileBytes: MAX_FILE_BYTES, filter: isAnalysable });
   } catch {
     // Malformed or unexpected archive shape: fall back rather than fail.
     return null;
@@ -149,12 +157,7 @@ export async function fetchRepoArchive(
     contents.set(entry.path, utf8Decode(entry.content));
   }
 
-  return {
-    contents,
-    tree,
-    considered: tree.length,
-    archiveBytes: response.bytes.length,
-  };
+  return { contents, tree, considered: tree.length, archiveBytes: bytes.length };
 }
 
 function resetDate(headers?: Record<string, string>): Date | undefined {

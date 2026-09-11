@@ -9,6 +9,7 @@ import {
 } from "@/lib/github";
 import { fetchRepoArchive } from "@/lib/github-archive";
 import { gatherPriorFlags } from "@/lib/graph";
+import { fetchPublicRepo } from "@/lib/providers";
 import { getSample, sampleToAnalyzeInput } from "@/lib/samples";
 import {
   CreError,
@@ -153,6 +154,45 @@ async function runScan(body: ScanRequest, send: (event: ScanEvent) => void) {
       type: "done",
       report: verdictToReport(verdict, parsed, startedAt),
     });
+    return;
+  }
+
+  // --- GitLab / Bitbucket: public repos only, via their archive endpoints ---
+  if (parsed.host !== "github") {
+    const label = parsed.host === "gitlab" ? "GitLab" : "Bitbucket";
+    send({
+      type: "stage",
+      stage: "resolving",
+      message: `Resolving ${parsed.owner}/${parsed.name}`,
+      detail: `${label} · public access`,
+    });
+    const result = await fetchPublicRepo(parsed.host, parsed.owner, parsed.name, parsed.ref, http);
+    if (!result) {
+      send({
+        type: "error",
+        code: "TOO_LARGE",
+        message: `Could not read this ${label} repository — it may be too large, or the branch was not found.`,
+      });
+      return;
+    }
+    send({
+      type: "stage",
+      stage: "fetching",
+      message: "Fetched the repository",
+      detail: `${(result.archiveBytes / 1024).toFixed(0)} KB · ${result.contents.size} files readable`,
+    });
+
+    const priorFlags = await gatherPriorFlags(result.repo.owner, result.repo.name);
+    const report = await analyzeRepo(
+      {
+        repo: result.repo,
+        tree: result.tree,
+        contents: result.contents,
+        filesConsidered: result.considered,
+      },
+      { geminiApiKey, geminiModel, http, priorFlags: priorFlags ?? undefined, onEvent: send },
+    );
+    send({ type: "done", report });
     return;
   }
 
